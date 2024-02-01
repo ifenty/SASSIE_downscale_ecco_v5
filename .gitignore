@@ -1,3 +1,7 @@
+# ignore folders with data and output figures
+figures/
+data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
