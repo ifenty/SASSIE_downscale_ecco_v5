@@ -24,10 +24,10 @@
 23,EXFlwnet,EXF_day_mean,2D,17,10,S,NA,c,NA
 24,EXFswdn,EXF_day_mean,2D,17,11,S,NA,c,NA
 25,EXFswnet,EXF_day_mean,2D,17,12,S,NA,c,NA
-26,EXFuwind,EXF_day_mean,2D,17,13,S,NA,c,NA
-27,EXFtaux,EXF_day_mean,2D,17,14,S,NA,c,NA
-28,EXFvwind,EXF_day_mean,2D,17,15,S,NA,c,NA
-29,EXFtauy,EXF_day_mean,2D,17,16,S,NA,c,NA
+26,EXFuwind,EXF_day_mean,2D,17,13,V,NA,u,EXFvwind
+27,EXFtaux,EXF_day_mean,2D,17,14,V,NA,u,EXFtauy
+28,EXFvwind,EXF_day_mean,2D,17,15,V,NA,v,EXFuwind
+29,EXFtauy,EXF_day_mean,2D,17,16,V,NA,v,EXFtaux
 30,oceFWflx,oce_flux_day_mean,2D,7,0,S,NA,c,NA
 31,oceQnet,oce_flux_day_mean,2D,7,1,S,NA,c,NA
 32,oceQsw,oce_flux_day_mean,2D,7,2,S,NA,c,NA
