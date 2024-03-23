@@ -566,7 +566,6 @@ def create_encoding(ecco_ds, output_array_precision = np.float32):
     # ... combined data variable and coordinate encoding directives
     encoding = {**dv_encoding, **coord_encoding}
 
-    print(encoding)
     return encoding
 
 
@@ -787,12 +786,15 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
         var_HHv2_ds = modify_metadata(var_HHv2_ds, var_name, var_filename_netcdf)
         
         ## reorder dims
-        var_HHv2_ds_ordered = reorder_dims(var_HHv2_ds)
+        var_HHv2_ds = reorder_dims(var_HHv2_ds)
         
         #data_dir_ec2
         ## save netcdf
-        save_sassie_netcdf_to_ec2(var_HHv2_ds_ordered, nc_dir_ec2, var_filename_netcdf)
+        save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf)
         
+        # remove frommemory
+        var_HHv2_ds = None
+
     # return(var_HHv2_ds_final)
     print("\n######## processing complete ########\n")
 
@@ -838,7 +840,7 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
             print(f"could not download {n1_geometry_s3_url} to {n1_geometry_local_full_path}")
             return
 
-    sassie_n1_geometry_ds = xr.open_dataset(n1_geometry_local_full_path).load()
+    sassie_n1_geometry_ds = xr.open_dataset(n1_geometry_local_full_path)
     sassie_n1_geometry_ds.close()
     print('...geometry file loaded')
     
@@ -916,13 +918,13 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
         gz_tmp_dir_base = f"{gz_filename.split('.')[0]}_{gz_filename.split('.')[1]}"
 
         gz_dir_ec2 =  Path(f"/home/jpluser/sassie/tmp_gz/{gz_tmp_dir_base}")
-        nc_dir_ec2 =  Path(f"/home/jpluser/sassie/tmp_nc/{gz_tmp_dir_base}")
+        nc_root_dir_ec2 =  Path(f"/home/jpluser/sassie/tmp_nc/{gz_tmp_dir_base}")
 
         print(f'temporary gz directory {gz_dir_ec2}')
-        print(f'temporary nc directory {nc_dir_ec2}')
+        print(f'temporary nc directory {nc_root_dir_ec2}')
 
         gz_dir_ec2.mkdir(exist_ok=True, parents=True)
-        nc_dir_ec2.mkdir(exist_ok=True, parents=True)
+        nc_root_dir_ec2.mkdir(exist_ok=True, parents=True)
 
         gz_full_path = gz_dir_ec2 / gz_filename
         print(gz_filename, gz_full_path)
@@ -943,27 +945,40 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
         # stored in the gz_dir_ec2 directory
         for var_name in vars_in_dataset:
             ## generate netcdfs for variable
+            nc_dir_ec2 = nc_root_dir_ec2 / var_name
+            try:
+                nc_dir_ec2.mkdir(exist_ok=True, parents=True)
+            except :
+                print(f"could not make {nc_dir_ec2} ")
+                return
+            
             create_HH_netcdfs(var_name, gz_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table)
 
-        # push nc files to aws s3
-        if push_to_s3:
-            print('>> pushing contents of nc dir to s3')
-            push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name)
-        else:
-            print('>> not pushing files to s3')
+            # push nc files to aws s3
+            if push_to_s3:
+                print('>> pushing contents of nc dir to s3')
+                push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name)
+            else:
+                print('>> not pushing files to s3')
        
+            if keep_local_files:
+                print('>> keeping local nc and gz directories')
+            else:
+                ## remove tmp nc var directory and all of its contents
+                print(">> removing tmp nc dir ", nc_dir_ec2)
+                os.system(f"rm -rf {nc_dir_ec2}")
+
         ## after processing is complete, delete data files on ec2
                 
         if keep_local_files:
-            print('>> keeping local nc and gz directories')
+            print('>> keeping local gz directories')
         else:
             ## remove tmp tar.gz files
             print(">> removing tmp gz dir")
             os.system(f"rm -rf {str(gz_dir_ec2)}")
-            
-            ## remove tmp nc directory and all of its contents
-            print(">> removing tmp nc dir")
-            os.system(f"rm -rf {nc_dir_ec2}")
+
+            print(">> removing tmp nc root dir ", nc_root_dir_ec2)
+            os.system(f"rm -rf {str(nc_root_dir_ec2)}")
         
 
 if __name__ == '__main__':
