@@ -883,10 +883,9 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     # find filenames
     file_list = np.sort(s3.glob(f'{root_s3_name}{root_filenames}/*tar.gz'))
 
-    print(f'number of files: {len(file_list)}')
-    print(f'files to process: {files_to_process}')
-    print(f'first file: {file_list[0]}')
-    print(f'last file: {file_list[-1]}')
+    print(f'number of files in bucket: {len(file_list)}')
+    print(f'first file in bucket : {file_list[0]}')
+    print(f'last file in bucket  : {file_list[-1]}')
       
     # construct url form of filenames
     data_urls = [
@@ -904,7 +903,9 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     else:
         print("invalid entry for `files_to_process` argument")
     
-
+    print(f'number of files to process: {files_to_process}')
+    print(f'first file to process : {files_to_process[0]}')
+    print(f'last file to process  : {files_to_process[-1]}')
     for data_url in data_urls_select:
         
         print('\n==== processing file:', data_url, '====\n')
