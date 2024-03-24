@@ -806,7 +806,7 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
 
 def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name, 
                                  force_redownload, keep_local_files, push_to_s3,
-                                 files_to_process):
+                                 files_to_process, local_scratch_dir):
     
 
     ## get list of gz files in s3 directory
@@ -917,9 +917,8 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
         gz_filename = data_url.split("/")[-1]
 
         gz_tmp_dir_base = f"{gz_filename.split('.')[0]}_{gz_filename.split('.')[1]}"
-
-        gz_dir_ec2 =  Path(f"/home/jpluser/sassie/tmp_gz/{gz_tmp_dir_base}")
-        nc_root_dir_ec2 =  Path(f"/home/jpluser/sassie/tmp_nc/{gz_tmp_dir_base}")
+        gz_dir_ec2 =  Path(f"{local_scratch_dir}/tmp_gz/{gz_tmp_dir_base}")
+        nc_root_dir_ec2 =  Path(f"{local_scratch_dir}/tmp_nc/{gz_tmp_dir_base}")
 
         print(f'temporary gz directory {gz_dir_ec2}')
         print(f'temporary nc directory {nc_root_dir_ec2}')
@@ -1010,6 +1009,10 @@ if __name__ == '__main__':
                         help="String specifying whether to process all files (-1), one file (one number as index), or range (start end).",
                         dest="files_to_process", nargs="*", type=int, required=False, default = [-1])
 
+    parser.add_argument("-l", "--local_scratch_dir", action="store",   
+                        help="The local scratch directory on the ec2 instance where files will be stored temporarily.", 
+                        dest="local_scratch_dir", type=str, required=True)
+    
     args = parser.parse_args()
 
     root_filenames = args.root_filenames
@@ -1019,6 +1022,7 @@ if __name__ == '__main__':
     keep_local_files = args.keep_local_files
     push_to_s3 = args.push_to_s3
     files_to_process = args.files_to_process
+    local_scratch_dir = args.local_scratch_dir
 
     print('root_filenames ', root_filenames)
     print('root_s3_name ' , root_s3_name)
@@ -1027,10 +1031,11 @@ if __name__ == '__main__':
     print('files_to_process ', files_to_process)
     print('keep_local_files ', keep_local_files)
     print('push_to_s3 ', push_to_s3)
-
+    print('local_scratch_dir ', local_scratch_dir)
 
     generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, \
                                  root_dest_s3_name, force_redownload, \
-                                 keep_local_files, push_to_s3, files_to_process)
+                                 keep_local_files, push_to_s3, files_to_process, \
+                                 local_scratch_dir)
 
 
