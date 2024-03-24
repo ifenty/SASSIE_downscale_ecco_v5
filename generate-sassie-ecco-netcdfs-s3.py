@@ -18,6 +18,7 @@ from pathlib import Path
 import s3fs
 import argparse
 from pprint import pprint
+import time 
 
 ## import ECCO utils
 import sys
@@ -279,7 +280,7 @@ def timestamp_from_iter_num(iter_num):
     return timestamp
 
 
-def unpack_tar_gz_files(data_dir):
+def unpack_tar_gz_files(data_dir, keep_local_files):
     ## see if tar.gz files were already decompressed
     data_files = list(data_dir.glob('*.data'))
     if len(data_files)>0:
@@ -294,6 +295,7 @@ def unpack_tar_gz_files(data_dir):
             tar = tarfile.open(file_path, "r:gz")
             tar.extractall(data_dir) # save files to same directory
             tar.close()
+             
 
 
 def show_me_the_ds(ds):
@@ -654,7 +656,7 @@ def push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name):
     mybucket = root_dest_s3_name + var_name + "_AVG_DAILY"
     print(f'pushing netcdf files to s3 bucket : {mybucket}')
 
-    cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc'"
+    cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress"
     os.system(cmd)
     
     print(f'==== pushed {nc_dir_ec2} to s3 ====')
@@ -719,7 +721,8 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
     
     ## loop through each variable that was requested --------------------------------------------
     print('\n############ processing:', var_name, '############')
-    
+    start_time = time.time()
+ 
     ## get root directory for variable and then define directory
     var_tmp_table = vars_table[vars_table.variable.isin([var_name])]
 
@@ -796,6 +799,7 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
         var_HHv2_ds = None
 
     # return(var_HHv2_ds_final)
+    print('processing time ', time.time() - start_time)
     print("\n######## processing complete ########\n")
 
 
@@ -909,6 +913,7 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     for data_url in data_urls_select:
         
         print('\n==== processing file:', data_url, '====\n')
+        start_time_a = time.time()
 
         ## download tar.gz file from s3 cloud to ec2 tmp_dir
         s3 = []
@@ -936,13 +941,15 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
             print(f'gz file exists {gz_full_path.is_file()}')
             
         ## decompress tar.gz file into *.data and *.meta files
-        unpack_tar_gz_files(gz_dir_ec2)
+        unpack_tar_gz_files(gz_dir_ec2, keep_local_files)
         
         ## identify which variables are in the dataset using vars_table
         vars_in_dataset = vars_table[vars_table.root_filename.isin([root_filenames])].variable.values
     
         ## create netcdfs for each different variable type in the *.data files
         # stored in the gz_dir_ec2 directory
+        print('...download time ', time.time() - start_time_a)
+
         for var_name in vars_in_dataset:
             ## generate netcdfs for variable
             nc_dir_ec2 = nc_root_dir_ec2 / var_name
@@ -956,8 +963,10 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
 
             # push nc files to aws s3
             if push_to_s3:
+                start_time_b = time.time()
                 print('>> pushing contents of nc dir to s3')
                 push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name)
+                print('s3 push time ', time.time() - start_time_b)
             else:
                 print('>> not pushing files to s3')
        
