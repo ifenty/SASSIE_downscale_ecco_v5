@@ -500,7 +500,13 @@ def process_3D_variable(data_dir, filename, var_tmp_table, vars_table, sassie_n1
 def mask_dry_grid_cells(ds, var, geometry_ds, grid_point):
     ## make copy of dataset
     ds_tmp = ds.copy(deep=True)
-    
+
+    print('mask dry grid cells')    
+    print(ds.data_vars)
+    print(ds.dims)
+    print(var)
+    print(grid_point)
+ 
     ## tracer points use maskC, u points use maskW, and v points use maskS
     if grid_point == 'c':
         ds_tmp[var] = ds[var].where(geometry_ds.maskC==True)
