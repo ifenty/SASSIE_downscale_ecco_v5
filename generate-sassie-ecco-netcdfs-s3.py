@@ -282,11 +282,14 @@ def timestamp_from_iter_num(iter_num):
 
 def unpack_tar_gz_files(data_dir, keep_local_files):
     ## see if tar.gz files were already decompressed
+    print('looking for *.data files in ', data_dir)
     data_files = list(data_dir.glob('*.data'))
     if len(data_files)>0:
-        print("tar.gz files already unpacked")
+        print("...tar.gz files already unpacked")
+
     ## if not, open them
     else:
+        print("...unpacking tar.gz ")
         ## pull list of all tar.gz files in directory
         tar_gz_files = list(data_dir.glob('*.tar.gz'))
         
@@ -498,20 +501,31 @@ def process_3D_variable(data_dir, filename, var_tmp_table, vars_table, sassie_n1
 
 
 def mask_dry_grid_cells(ds, var, geometry_ds, grid_point):
+    # .. I do not see why we need to copy the dataset instead of operating on it directly
     ## make copy of dataset
-    ds_tmp = ds.copy(deep=True)
-    
+    #ds_tmp = ds.copy(deep=True)
+
+    print('mask dry grid cells')    
+ 
     ## tracer points use maskC, u points use maskW, and v points use maskS
     if grid_point == 'c':
-        ds_tmp[var] = ds[var].where(geometry_ds.maskC==True)
+        # some 3D vertical vector fields (like WVEL) 
+        # use 'k_l' for their vertical dimension  
+        # to apply the wet/dry mask using maskC,
+        # we first have to temporarily rename the maskC 
+        # vertical dimension from k to k_l 
+        if 'k_l' in ds[var].dims:
+            ds[var] = ds[var].where(geometry_ds.maskC.rename({'k':'k_l'}) == True)
+        else: 
+            ds[var] = ds[var].where(geometry_ds.maskC==True)
         
     elif grid_point == 'v':
-        ds_tmp[var] = ds[var].where(geometry_ds.maskS==True)
+        ds[var] = ds[var].where(geometry_ds.maskS==True)
         
     elif grid_point == 'u':
-        ds_tmp[var] = ds[var].where(geometry_ds.maskW==True)
+        ds[var] = ds[var].where(geometry_ds.maskW==True)
     
-    return ds_tmp
+    return ds
 
 
 def create_encoding(ecco_ds, output_array_precision = np.float32):
@@ -703,7 +717,7 @@ def plot_sassie_HHv2_3D(face_arr, depth_level=0, vmin=None, vmax=None,\
             fig.colorbar(im1, ax=axs)
 
 
-def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table):
+def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk):
     """
     Create netCDF files for a given variable.
 
@@ -793,9 +807,12 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
         
         #data_dir_ec2
         ## save netcdf
-        save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf)
+        if save_nc_to_disk:
+            save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf)
+        else:
+            print('... not saving nc to disk because save_nc_to_disk==False')
         
-        # remove frommemory
+        # remove from memory
         var_HHv2_ds = None
 
     # return(var_HHv2_ds_final)
@@ -810,7 +827,7 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
 
 def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name, 
                                  force_redownload, keep_local_files, push_to_s3,
-                                 files_to_process, local_scratch_dir):
+                                 files_to_process, local_scratch_dir, save_nc_to_disk):
     
 
     ## get list of gz files in s3 directory
@@ -910,15 +927,15 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     print(f'number of files to process: {files_to_process}')
     print(f'first file to process : {files_to_process[0]}')
     print(f'last file to process  : {files_to_process[-1]}')
+
+    s3 = []
+    s3 = s3fs.S3FileSystem(anon=False)
     for data_url in data_urls_select:
         
         print('\n==== processing file:', data_url, '====\n')
-        start_time_a = time.time()
 
-        ## download tar.gz file from s3 cloud to ec2 tmp_dir
-        s3 = []
-        s3 = s3fs.S3FileSystem(anon=False)
         
+        ## download tar.gz file from s3 cloud to ec2 tmp_dir
         gz_filename = data_url.split("/")[-1]
 
         gz_tmp_dir_base = f"{gz_filename.split('.')[0]}_{gz_filename.split('.')[1]}"
@@ -935,20 +952,24 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
         print(gz_filename, gz_full_path)
         
         # download gz file
-        if ~gz_full_path.is_file() or force_redownload: # checks if file is there
+        if (not gz_full_path.is_file()) or (force_redownload): # checks if file is there
+            start_time_a = time.time()
+            print(f'gz file needs to be downloaded: isfile()={gz_full_path.is_file()} or force_redownload: {force_redownload}')
             s3.download(data_url, str(gz_full_path))
+            print('...download time ', time.time() - start_time_a)
         else: 
-            print(f'gz file exists {gz_full_path.is_file()}')
+            print(f'...not downloading gz because local gz is present: isfile()={gz_full_path.is_file()}')
             
         ## decompress tar.gz file into *.data and *.meta files
+        start_time_a = time.time()
         unpack_tar_gz_files(gz_dir_ec2, keep_local_files)
+        print('...unpack gz time ', time.time() - start_time_a)
         
         ## identify which variables are in the dataset using vars_table
         vars_in_dataset = vars_table[vars_table.root_filename.isin([root_filenames])].variable.values
     
         ## create netcdfs for each different variable type in the *.data files
         # stored in the gz_dir_ec2 directory
-        print('...download time ', time.time() - start_time_a)
 
         for var_name in vars_in_dataset:
             ## generate netcdfs for variable
@@ -959,7 +980,9 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
                 print(f"could not make {nc_dir_ec2} ")
                 return
             
-            create_HH_netcdfs(var_name, gz_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table)
+            start_time_a = time.time()
+            create_HH_netcdfs(var_name, gz_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
+            print('...create HH time ', time.time() - start_time_a)
 
             # push nc files to aws s3
             if push_to_s3:
@@ -1014,6 +1037,9 @@ if __name__ == '__main__':
     parser.add_argument("--push_to_s3", action="store_true",
                         help="Boolean to indicate whether to keep send netcdf files to s3 bucket after processing.")
 
+    parser.add_argument("--save_nc_to_disk", action="store_true",
+                        help="Boolean to indicate whether to keep save netcdf files to local disk after processing.")
+
     parser.add_argument("-p", "--files_to_process", action="store",
                         help="String specifying whether to process all files (-1), one file (one number as index), or range (start end).",
                         dest="files_to_process", nargs="*", type=int, required=False, default = [-1])
@@ -1031,7 +1057,12 @@ if __name__ == '__main__':
     keep_local_files = args.keep_local_files
     push_to_s3 = args.push_to_s3
     files_to_process = args.files_to_process
+    save_nc_to_disk = args.save_nc_to_disk
     local_scratch_dir = args.local_scratch_dir
+
+    if save_nc_to_disk == False:
+       push_to_s3 = False
+       print('save_nc_to_disk is not set, so push_to_s3 set to false') 
 
     print('root_filenames ', root_filenames)
     print('root_s3_name ' , root_s3_name)
@@ -1040,11 +1071,12 @@ if __name__ == '__main__':
     print('files_to_process ', files_to_process)
     print('keep_local_files ', keep_local_files)
     print('push_to_s3 ', push_to_s3)
+    print('save_nc_to_disk ', save_nc_to_disk)
     print('local_scratch_dir ', local_scratch_dir)
 
     generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, \
                                  root_dest_s3_name, force_redownload, \
                                  keep_local_files, push_to_s3, files_to_process, \
-                                 local_scratch_dir)
+                                 local_scratch_dir, save_nc_to_disk)
 
 

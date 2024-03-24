@@ -1,6 +1,7 @@
 #!/bin/bash
 
-for i in `seq 1 4`
+# one integer argument how many nvme disks are on the machine
+for i in `seq 1 ${1}`
 do
 
    sudo file -s /dev/nvme${i}n1
