@@ -35,9 +35,9 @@
 34,oceTAUY,oce_flux_day_mean,2D,7,4,V,NA,v,oceTAUX
 35,SFLUX,oce_flux_day_mean,2D,7,5,S,NA,c,NA
 36,TFLUX,oce_flux_day_mean,2D,7,6,S,NA,c,NA
-37,PHIHYD,phi_3D_day_mean,2D,3,0,S,NA,c,NA
-38,PHIHYDcR,phi_3D_day_mean,2D,3,1,S,NA,c,NA
-39,RHOAnoma,phi_3D_day_mean,2D,3,2,S,NA,c,NA
+37,PHIHYD,phi_3D_day_mean,3D,3,0,S,NA,c,NA
+38,PHIHYDcR,phi_3D_day_mean,3D,3,1,S,NA,c,NA
+39,RHOAnoma,phi_3D_day_mean,3D,3,2,S,NA,c,NA
 40,SIatmFW,seaice_flux_day_mean,2D,2,0,S,NA,c,NA
 41,SIatmQnt,seaice_flux_day_mean,2D,2,1,S,NA,c,NA
 42,SIarea,seaice_state_day_mean,2D,3,0,S,NA,c,NA
