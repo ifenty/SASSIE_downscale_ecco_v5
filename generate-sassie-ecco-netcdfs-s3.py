@@ -793,7 +793,7 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
     else:
        print(f'found {len(data_files)} *.data files in {data_dir_ec2}')  
 
-    print(f'not saving nc to disk because save_nc_to_disk=={save_nc_to_disk}')
+    print(f'... save_nc_to_disk=={save_nc_to_disk}')
 
     for file in data_files:
         print('>> processing: ', file)
