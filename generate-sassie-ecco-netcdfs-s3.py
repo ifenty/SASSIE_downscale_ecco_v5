@@ -19,6 +19,9 @@ import s3fs
 import argparse
 from pprint import pprint
 import time 
+import gzip
+import traceback
+from contextlib import contextmanager
 
 ## import ECCO utils
 import sys
@@ -27,6 +30,47 @@ import ecco_v4_py as ecco
 
 
 ## Define functions
+
+
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
+
+def time_it(func):
+    """
+    Decorator that reports the execution time.
+    """
+    def wrapper(*args, **kwargs):
+        start_time = time.time()  # Capture the start time
+        result = func(*args, **kwargs)  # Execute the function
+        end_time = time.time()  # Capture the end time
+        print(f"{func.__name__} took {end_time-start_time:.4f} seconds to execute")
+        return result
+    return wrapper
+
+
+def is_valid_gzip_file(filepath):
+    try:
+        # https://stackoverflow.com/questions/33938173/verifying-file-integrity-with-python/33938986#33938986
+        # Attempt to open the gzip file in read mode
+        with gzip.open(filepath, 'rb') as f:
+             print(f'... opening {filepath}')
+             # if the gz is bad then seek to the end will fail
+             f.seek(-1, os.SEEK_END)
+             return True
+
+    except Exception as e:
+        print(f'ERROR: caught for {filepath} {e}')
+        traceback.print_exc()
+        return False
+
+
 
 def load_sassie_N1_field(file_dir, fname, nk=1, skip=0):
     num_cols = 680*4 + 1080
@@ -279,25 +323,34 @@ def timestamp_from_iter_num(iter_num):
     
     return timestamp
 
-
+@time_it
 def unpack_tar_gz_files(data_dir, keep_local_files):
     ## see if tar.gz files were already decompressed
-    print('looking for *.data files in ', data_dir)
+    print(f'... looking for *.data files in {data_dir}')
     data_files = list(data_dir.glob('*.data'))
+
     if len(data_files)>0:
-        print("...tar.gz files already unpacked")
+        print("... tar.gz files already unpacked")
 
     ## if not, open them
     else:
-        print("...unpacking tar.gz ")
         ## pull list of all tar.gz files in directory
         tar_gz_files = list(data_dir.glob('*.tar.gz'))
         
         ## unzip targz file
         for file_path in tar_gz_files:
-            tar = tarfile.open(file_path, "r:gz")
-            tar.extractall(data_dir) # save files to same directory
-            tar.close()
+            print(f'... testing validity of {file_path}')
+
+            if is_valid_gzip_file(file_path):
+              try:
+                 tar = tarfile.open(file_path, "r:gz")
+                 tar.extractall(data_dir) # save files to same directory
+                 tar.close()
+              except Exception as e:
+                 print(f'ERROR: could not extractall {file_path}')
+
+            else:
+              print('ERROR: invalid gz file could not open {file_path}')
              
 
 
@@ -504,8 +557,6 @@ def mask_dry_grid_cells(ds, var, geometry_ds, grid_point):
     # .. I do not see why we need to copy the dataset instead of operating on it directly
     ## make copy of dataset
     #ds_tmp = ds.copy(deep=True)
-
-    print('mask dry grid cells')    
  
     ## tracer points use maskC, u points use maskW, and v points use maskS
     if grid_point == 'c':
@@ -551,7 +602,6 @@ def create_encoding(ecco_ds, output_array_precision = np.float32):
                             '_FillValue':netcdf_fill_value}
 
     # ... coordinate encoding directives
-    # print('\n... creating coordinate encodings')
     coord_encoding = dict()
     
     for coord in ecco_ds.coords:
@@ -647,11 +697,7 @@ def reorder_dims(xr_dataset):
 
 
 
-    parser.add_argument("-d", "--root_dest_s3_name", action="store",
-                        help="The destination s3 bucket where processed netcdfs will be stored (e.g., s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/).", 
-                        dest="root_dest_s3_name", type=str, required=True)
-    
-
+@time_it
 def push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name):
     """
     Pushes the netcdf files from a directory to an S3 bucket.
@@ -665,17 +711,16 @@ def push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name):
         None
     """
     ## push file to s3 bucket
-    print(f"pushing to s3 bucket")
-    
     mybucket = root_dest_s3_name + var_name + "_AVG_DAILY"
-    print(f'pushing netcdf files to s3 bucket : {mybucket}')
+    print(f'\n>pushing netcdf files in {nc_dir_ec2} to s3 bucket : {mybucket}')
 
-    cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress"
-    os.system(cmd)
-    
-    print(f'==== pushed {nc_dir_ec2} to s3 ====')
+    cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
+    print(f'... aws command: {cmd}')
+    with suppress_stdout():
+       os.system(cmd)
 
 
+@time_it
 def save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf):
     ## save netCDF files to disk and then push to s3 bucket
 
@@ -689,7 +734,7 @@ def save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf):
     ## stage netcdf on tmp directory on ec2
     tmp_netcdf_filename = nc_dir_ec2 / var_filename_netcdf
 
-    print('saving netcdf to ', tmp_netcdf_filename)
+    print('   saving netcdf to ', tmp_netcdf_filename)
     var_HHv2_ds.to_netcdf(str(tmp_netcdf_filename), encoding = encoding_var)
     var_HHv2_ds.close()
         
@@ -716,7 +761,7 @@ def plot_sassie_HHv2_3D(face_arr, depth_level=0, vmin=None, vmax=None,\
         if show_colorbar:
             fig.colorbar(im1, ax=axs)
 
-
+@time_it
 def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk):
     """
     Create netCDF files for a given variable.
@@ -735,18 +780,23 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
     
     ## loop through each variable that was requested --------------------------------------------
     print('\n############ processing:', var_name, '############')
-    start_time = time.time()
  
     ## get root directory for variable and then define directory
     var_tmp_table = vars_table[vars_table.variable.isin([var_name])]
 
-    #root_filename = var_tmp_table.root_filename.values[0]
-    
     ## loop through files in root directory
     data_files = np.sort(list(data_dir_ec2.glob('*.data')))
-    
+   
+    if len(data_files) == 0:
+       print('... no data files to process in {data_dir_ec2}')   
+       return
+    else:
+       print(f'found {len(data_files)} *.data files in {data_dir_ec2}')  
+
+    print(f'... save_nc_to_disk=={save_nc_to_disk}')
+
     for file in data_files:
-        print('loading file: ', file)
+        print('>> processing: ', file)
         
         ## get filename
         filename = str(file).split('/')[-1]
@@ -809,15 +859,12 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
         ## save netcdf
         if save_nc_to_disk:
             save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf)
-        else:
-            print('... not saving nc to disk because save_nc_to_disk==False')
         
         # remove from memory
         var_HHv2_ds = None
 
     # return(var_HHv2_ds_final)
-    print('processing time ', time.time() - start_time)
-    print("\n######## processing complete ########\n")
+    print("######## processing complete ########\n")
 
 
 
@@ -833,7 +880,6 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     ## get list of gz files in s3 directory
     s3 = []
     s3 = s3fs.S3FileSystem(anon=False)
-    
         
     ## --------------------------------------------
     ## open model geometry from ec2
@@ -843,27 +889,26 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     n1_geometry_local_full_path = n1_geometry_local_dir / n1_geometry_local_filename
     n1_geometry_s3_url = 's3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/GRID/GRID_GEOMETRY_SASSIE_HH_V1R1_NATIVE_LLC1080.nc'
 
-    if n1_geometry_local_full_path.is_file(): # checks if file is there
-        print('geometry file already exists')
-    else:
+    print('> loading geometry dataset')
+    if not n1_geometry_local_full_path.is_file(): # checks if file is there
         # make geometry directory
         try:
-            print(f"creating geometry directory {n1_geometry_local_dir}")
+            print(f"...creating geometry directory {n1_geometry_local_dir}")
             n1_geometry_local_dir.mkdir(exist_ok=False, parents=True)
         except FileExistsError:
-            print(f"directory {n1_geometry_local_dir} already exists")
+            print(f"...directory {n1_geometry_local_dir} already exists")
 
         # download geometry file
         try:
             s3.download(n1_geometry_s3_url, str(n1_geometry_local_full_path))
-            print(f"downloaded {n1_geometry_s3_url} to {n1_geometry_local_full_path}")
+            print(f"...downloaded {n1_geometry_s3_url} to {n1_geometry_local_full_path}")
         except:
-            print(f"could not download {n1_geometry_s3_url} to {n1_geometry_local_full_path}")
+            print(f"ERROR: could not download {n1_geometry_s3_url} to {n1_geometry_local_full_path}")
             return
 
     sassie_n1_geometry_ds = xr.open_dataset(n1_geometry_local_full_path)
     sassie_n1_geometry_ds.close()
-    print('...geometry file loaded')
+    print('... geometry file loaded')
     
     ## open table that includes metadata for all variables
     vars_table = pd.read_csv('/home/jpluser/git_repos/SASSIE_downscale_ecco_v5/sassie_variables_table.csv', index_col=False)
@@ -899,118 +944,119 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     ## --------------------------------------------
     ## loop through gz files in root directory and process all variables included in the dataset
     
-    print(f'force redownload: {force_redownload}')
-
     # find filenames
     file_list = np.sort(s3.glob(f'{root_s3_name}{root_filenames}/*tar.gz'))
 
-    print(f'number of files in bucket: {len(file_list)}')
-    print(f'first file in bucket : {file_list[0]}')
-    print(f'last file in bucket  : {file_list[-1]}')
+    print(f'\n> Looking for files on {root_s3_name}{root_filenames}')
+    print(f'... num files  : {len(file_list)}')
+    print(f'... first file : {file_list[0]}')
+    print(f'... last file  : {file_list[-1]}')
       
     # construct url form of filenames
-    data_urls = [
-            's3://' + f
-            for f in file_list
-        ]
+    data_urls = ['s3://' + f for f in file_list ]
 
+    print(f'\n> Preparing list of files to process')
     ## specify start and end indices or process all files   
     if len(files_to_process) == 2: # two numbers indicates a range (two indices)
         data_urls_select = data_urls[files_to_process[0]:files_to_process[1]]
+        print(f'... first file to process : {data_urls_select[0]}')
+        print(f'... last file to process  : {data_urls_select[-1]}')
+    
     elif len(files_to_process) == 1 and files_to_process[0] == -1: # process all files
         data_urls_select = data_urls
-    elif len(files_to_process) == 1 and files_to_process[0] >= 0: # process one file using number as index
-        data_urls_select = data_urls[files_to_process[0]]
-    else:
-        print("invalid entry for `files_to_process` argument")
+        print(f'... first file to process : {data_urls_select[0]}')
+        print(f'... last file to process  : {data_urls_select[-1]}')
     
-    print(f'number of files to process: {files_to_process}')
-    print(f'first file to process : {files_to_process[0]}')
-    print(f'last file to process  : {files_to_process[-1]}')
+    elif len(files_to_process) == 1 and files_to_process[0] >= 0: # process one file using number as index
+        # wrap in list
+        data_urls_select = [data_urls[files_to_process[0]]]
+        print(f'... 1 file to process : {data_urls_select}')
+    
+    else:
+        print("ERROR: invalid entry for `files_to_process` argument")
+        return 
+ 
 
-    s3 = []
-    s3 = s3fs.S3FileSystem(anon=False)
+    # Loop through all data_urls
     for data_url in data_urls_select:
-        
-        print('\n==== processing file:', data_url, '====\n')
-
         
         ## download tar.gz file from s3 cloud to ec2 tmp_dir
         gz_filename = data_url.split("/")[-1]
 
+        print(f'\n==== processing file: {gz_filename} ====')
         gz_tmp_dir_base = f"{gz_filename.split('.')[0]}_{gz_filename.split('.')[1]}"
+
         gz_dir_ec2 =  Path(f"{local_scratch_dir}/tmp_gz/{gz_tmp_dir_base}")
         nc_root_dir_ec2 =  Path(f"{local_scratch_dir}/tmp_nc/{gz_tmp_dir_base}")
 
-        print(f'temporary gz directory {gz_dir_ec2}')
-        print(f'temporary nc directory {nc_root_dir_ec2}')
+        print(f'... temporary gz directory {gz_dir_ec2}')
+        print(f'... temporary nc directory {nc_root_dir_ec2}')
 
         gz_dir_ec2.mkdir(exist_ok=True, parents=True)
         nc_root_dir_ec2.mkdir(exist_ok=True, parents=True)
 
         gz_full_path = gz_dir_ec2 / gz_filename
-        print(gz_filename, gz_full_path)
-        
+
+        print('\n> preparing *data file for processing')
+        print(f'... gz file: {gz_full_path}')
+       
+ 
         # download gz file
         if (not gz_full_path.is_file()) or (force_redownload): # checks if file is there
             start_time_a = time.time()
-            print(f'gz file needs to be downloaded: isfile()={gz_full_path.is_file()} or force_redownload: {force_redownload}')
+            print(f'...gz file needs to be downloaded: isfile()={gz_full_path.is_file()} or force_redownload: {force_redownload}')
             s3.download(data_url, str(gz_full_path))
-            print('...download time ', time.time() - start_time_a)
+            print('... download time ', time.time() - start_time_a)
         else: 
-            print(f'...not downloading gz because local gz is present: isfile()={gz_full_path.is_file()}')
+            print(f'... not re-downloading gz because local gz is present: isfile()={gz_full_path.is_file()}')
             
         ## decompress tar.gz file into *.data and *.meta files
-        start_time_a = time.time()
         unpack_tar_gz_files(gz_dir_ec2, keep_local_files)
-        print('...unpack gz time ', time.time() - start_time_a)
         
         ## identify which variables are in the dataset using vars_table
         vars_in_dataset = vars_table[vars_table.root_filename.isin([root_filenames])].variable.values
     
-        ## create netcdfs for each different variable type in the *.data files
+        # create DataSets for each different variable type in the *.data files
         # stored in the gz_dir_ec2 directory
-
+        # and possibly store to disk if 'save_nc_to_disk==True'
         for var_name in vars_in_dataset:
-            ## generate netcdfs for variable
             nc_dir_ec2 = nc_root_dir_ec2 / var_name
             try:
                 nc_dir_ec2.mkdir(exist_ok=True, parents=True)
             except :
-                print(f"could not make {nc_dir_ec2} ")
-                return
+                print(f"ERROR: could not make {nc_dir_ec2} ")
+                exit()
             
-            start_time_a = time.time()
             create_HH_netcdfs(var_name, gz_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
-            print('...create HH time ', time.time() - start_time_a)
 
             # push nc files to aws s3
             if push_to_s3:
-                start_time_b = time.time()
-                print('>> pushing contents of nc dir to s3')
                 push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name)
-                print('s3 push time ', time.time() - start_time_b)
             else:
-                print('>> not pushing files to s3')
+                print('> not pushing files to s3')
        
+            print('\n> cleaning up local nc files') 
             if keep_local_files:
-                print('>> keeping local nc and gz directories')
+                print('... keeping local nc  directories')
             else:
                 ## remove tmp nc var directory and all of its contents
-                print(">> removing tmp nc dir ", nc_dir_ec2)
+                print("... removing tmp nc dir ", nc_dir_ec2)
                 os.system(f"rm -rf {nc_dir_ec2}")
 
         ## after processing is complete, delete data files on ec2
-                
+               
+        print('\n> cleaning up local gz directories')
         if keep_local_files:
-            print('>> keeping local gz directories')
+            print('... keeping local gz directories')
         else:
             ## remove tmp tar.gz files
-            print(">> removing tmp gz dir")
+            print("... removing tmp gz dir")
             os.system(f"rm -rf {str(gz_dir_ec2)}")
 
-            print(">> removing tmp nc root dir ", nc_root_dir_ec2)
+            print("... removing tmp nc root dir ", nc_root_dir_ec2)
             os.system(f"rm -rf {str(nc_root_dir_ec2)}")
+
+        print(f'\n==== done processing file: {gz_filename} ====\n')
         
 
 if __name__ == '__main__':
@@ -1064,6 +1110,9 @@ if __name__ == '__main__':
        push_to_s3 = False
        print('save_nc_to_disk is not set, so push_to_s3 set to false') 
 
+    print('WELCOME TO THE SASSY SASSIE MDS FILE FORMATTER')
+    print('----------------------------------------------')
+    print('\nARGUMENTS: ')
     print('root_filenames ', root_filenames)
     print('root_s3_name ' , root_s3_name)
     print('root_dest_s3_name ', root_dest_s3_name)
@@ -1074,9 +1123,9 @@ if __name__ == '__main__':
     print('save_nc_to_disk ', save_nc_to_disk)
     print('local_scratch_dir ', local_scratch_dir)
 
+    print('\n>>>> BEGIN EXECUTION')
     generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, \
                                  root_dest_s3_name, force_redownload, \
                                  keep_local_files, push_to_s3, files_to_process, \
                                  local_scratch_dir, save_nc_to_disk)
-
-
+    print('>>>> END EXECUTION\n')
