@@ -17,10 +17,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import s3fs
 import argparse
+from pprint import pprint
+import time 
 
 ## import ECCO utils
 import sys
-sys.path.append('/Users/mzahn/github_others/ECCOv4-py')
+sys.path.append('/home/jpluser/git_repos/ECCOv4-py')
 import ecco_v4_py as ecco
 
 
@@ -33,7 +35,8 @@ def load_sassie_N1_field(file_dir, fname, nk=1, skip=0):
     time_level = int(fname.split('.data')[0].split('.')[-1])
     
     tmp_compact = ecco.load_binary_array(file_dir, fname, \
-                                    num_rows, num_cols, nk=nk, skip=skip, filetype='>f4')
+                                    num_rows, num_cols, nk=nk, skip=skip, 
+                                    filetype='>f4', less_output=True)
 
     return tmp_compact, time_level
 
@@ -277,13 +280,16 @@ def timestamp_from_iter_num(iter_num):
     return timestamp
 
 
-def unpack_tar_gz_files(data_dir):
+def unpack_tar_gz_files(data_dir, keep_local_files):
     ## see if tar.gz files were already decompressed
+    print('looking for *.data files in ', data_dir)
     data_files = list(data_dir.glob('*.data'))
     if len(data_files)>0:
-        print("tar.gz files already unpacked")
+        print("...tar.gz files already unpacked")
+
     ## if not, open them
     else:
+        print("...unpacking tar.gz ")
         ## pull list of all tar.gz files in directory
         tar_gz_files = list(data_dir.glob('*.tar.gz'))
         
@@ -292,8 +298,20 @@ def unpack_tar_gz_files(data_dir):
             tar = tarfile.open(file_path, "r:gz")
             tar.extractall(data_dir) # save files to same directory
             tar.close()
+             
 
 
+def show_me_the_ds(ds):
+    print('\n>>show_me_the_ds')
+    print('dims: ', list(ds.dims))
+    print('coords: ', list(ds.coords))
+    print('data_vars: ', list(ds.data_vars))
+
+def show_me_the_da(da):
+    print('\n>>show_me_the_da')
+    print('dims: ', list(da.dims))
+    print('coords: ',list(da.coords))
+    
 def make_2D_HHv2_ds(field_HH, model_grid_ds, timestamp, grid_point, da_name):
     
     ## get time bounds and center time
@@ -326,8 +344,7 @@ def make_2D_HHv2_ds(field_HH, model_grid_ds, timestamp, grid_point, da_name):
         'XG':model_grid_ds.XG,\
         'YG':model_grid_ds.YG,\
         'XC_bnds':model_grid_ds.XC_bnds,\
-        'YC_bnds':model_grid_ds.YC_bnds,\
-        'Zp1':model_grid_ds.Zp1})
+        'YC_bnds':model_grid_ds.YC_bnds})
     
     return tmp_ds
 
@@ -429,7 +446,7 @@ def process_2D_variable(data_dir, filename, var_tmp_table, vars_table, sassie_n1
     ## add timestamp adn create dataset
     timestamp = timestamp_from_iter_num(iter_num)
     var_HHv2_ds = make_2D_HHv2_ds(var_HHv2, sassie_n1_geometry_ds, timestamp, grid_point=grid_point, da_name=var_name)
-    
+
     return var_HHv2_ds
 
 
@@ -484,20 +501,31 @@ def process_3D_variable(data_dir, filename, var_tmp_table, vars_table, sassie_n1
 
 
 def mask_dry_grid_cells(ds, var, geometry_ds, grid_point):
+    # .. I do not see why we need to copy the dataset instead of operating on it directly
     ## make copy of dataset
-    ds_tmp = ds.copy(deep=True)
-    
+    #ds_tmp = ds.copy(deep=True)
+
+    print('mask dry grid cells')    
+ 
     ## tracer points use maskC, u points use maskW, and v points use maskS
     if grid_point == 'c':
-        ds_tmp[var] = ds[var].where(geometry_ds.maskC==True)
+        # some 3D vertical vector fields (like WVEL) 
+        # use 'k_l' for their vertical dimension  
+        # to apply the wet/dry mask using maskC,
+        # we first have to temporarily rename the maskC 
+        # vertical dimension from k to k_l 
+        if 'k_l' in ds[var].dims:
+            ds[var] = ds[var].where(geometry_ds.maskC.rename({'k':'k_l'}) == True)
+        else: 
+            ds[var] = ds[var].where(geometry_ds.maskC==True)
         
     elif grid_point == 'v':
-        ds_tmp[var] = ds[var].where(geometry_ds.maskS==True)
+        ds[var] = ds[var].where(geometry_ds.maskS==True)
         
     elif grid_point == 'u':
-        ds_tmp[var] = ds[var].where(geometry_ds.maskW==True)
+        ds[var] = ds[var].where(geometry_ds.maskW==True)
     
-    return ds_tmp
+    return ds
 
 
 def create_encoding(ecco_ds, output_array_precision = np.float32):
@@ -516,14 +544,16 @@ def create_encoding(ecco_ds, output_array_precision = np.float32):
     
     dv_encoding = dict()
     for dv in ecco_ds.data_vars:
-        dv_encoding[dv] =  {'zlib':True, \
+        dv_encoding[dv] =  {'compression':'zlib',\
                             'complevel':5,\
-                            'shuffle':True,\
+                            'shuffle':False,\
+                            'fletcher32': False,\
                             '_FillValue':netcdf_fill_value}
 
     # ... coordinate encoding directives
     # print('\n... creating coordinate encodings')
     coord_encoding = dict()
+    
     for coord in ecco_ds.coords:
         # set default no fill value for coordinate
         if output_array_precision == np.float32:
@@ -557,12 +587,15 @@ def create_encoding(ecco_ds, output_array_precision = np.float32):
 
 def modify_metadata(ds, var, var_filename_netcdf):   
     title = 'SASSIE Ocean Model ' + var + ' Parameter for the Lat-Lon-Cap 1080 (llc1080) Native Model Grid (Version 1 Release 1)'
-    
+  
     ## edit specific metadata for these datasets
     ds.attrs['author'] = 'Mike Wood, Marie Zahn, and Ian Fenty'
     ds.attrs['comment'] = 'SASSIE llc1080 V1R1 fields are consolidated onto a single curvilinear grid face focusing on the Arctic domain using fields from the 5 faces of the lat-lon-cap 1080 (llc1080) native grid used in the original simulation.'
     ds.attrs['id'] = '10.5067/XXXXX-XXXXX' # will update with DOI when avail
-    ds.attrs['geospatial_vertical_min'] = np.round(ds.Zu.min().values,1)
+
+    if 'k' in list(ds.dims):
+        ds.attrs['geospatial_vertical_min'] = np.round(ds.Zu.min().values,1)
+        
     ds.attrs['geospatial_lat_min'] = np.round(ds.YC.min().values,1)
     ds.attrs['metadata_link'] = 'https://cmr.earthdata.nasa.gov/search/collections.umm_json?ShortName=XXXX_L4_GEOMETRY_LLC1080GRID_V1R1' # will update with DOI when avail
     ds.attrs['product_name'] = var_filename_netcdf
@@ -595,35 +628,71 @@ def modify_metadata(ds, var, var_filename_netcdf):
 
 def reorder_dims(xr_dataset):
     ## specify order of dims
-    tmp = xr_dataset[["time","j","i","k","j_g","i_g","k_u","k_l","k_p1","nv","nb"]]
-    tmp = tmp.drop_indexes(["nv","nb"]).reset_coords(["nv","nb"], drop=True)
+
+    # if 3D
+    if 'k' in list(xr_dataset.dims):
+        #tmp = xr_dataset[["time","j","i","k","j_g","i_g","k_u","k_l","k_p1","nv","nb"]]
+        tmp = xr_dataset[["time","k","j","i","k_u","k_l","k_p1","nv"]]
+    # if 2D
+    else:
+        tmp = xr_dataset[["time","j","i","nv"]]
+
+    tmp = tmp.drop_indexes(["nv"]).reset_coords(["nv"], drop=True)
     
+
     ## reassign dataset to new dims
     xr_ds_ordered = tmp.assign(xr_dataset)
     
     return xr_ds_ordered
 
 
-def save_sassie_netcdf_to_s3(var_HHv2_ds, output_dir, root_filename, var_filename_netcdf, var_name):
-    ## save netCDF files
+
+    parser.add_argument("-d", "--root_dest_s3_name", action="store",
+                        help="The destination s3 bucket where processed netcdfs will be stored (e.g., s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/).", 
+                        dest="root_dest_s3_name", type=str, required=True)
+    
+
+def push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name):
+    """
+    Pushes the netcdf files from a directory to an S3 bucket.
+
+    Args:
+        nc_dir_ec2 (str): The path to the directory containing the netcdf files on the EC2 instance.
+        root_dest_s3_name (str): The root name of the S3 bucket where the files will be pushed.
+        var_name (str): The name of the variable used to create the S3 bucket.
+
+    Returns:
+        None
+    """
+    ## push file to s3 bucket
+    print(f"pushing to s3 bucket")
+    
+    mybucket = root_dest_s3_name + var_name + "_AVG_DAILY"
+    print(f'pushing netcdf files to s3 bucket : {mybucket}')
+
+    cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress"
+    os.system(cmd)
+    
+    print(f'==== pushed {nc_dir_ec2} to s3 ====')
+
+
+def save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf):
+    ## save netCDF files to disk and then push to s3 bucket
+
+    # var_HHv2_ds         : The xarray dataset that will be saved to netcdf
+    # nc_dir_ec2          : The directory where the netcdf file will be saved on the ec2 instance
+    # var_filename_netcdf : The name of the netcdf file that will be saved
     
     ## create encoding
     encoding_var = create_encoding(var_HHv2_ds, output_array_precision = np.float32)
     
     ## stage netcdf on tmp directory on ec2
-    tmp_netcdf_dir = "/home/jpluser/sassie/tmp_netcdf"
-    var_HHv2_ds.to_netcdf(tmp_netcdf_dir / var_filename_netcdf, encoding = encoding_var)
-    var_HHv2_ds.close()
-    
-    ## push file to s3 cloud
-    mybucket = "ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/" + var_name + "_AVG_DAILY"
-    cmd=f"aws s3 cp {tmp_netcdf_dir} s3://{mybucket}/ --recursive --include '*.nc'"
-    
-    ## remove tmp file
-    os.system(f"rm -rf {tmp_netcdf_dir}/*")
-    
-    print('\n==== saved netcdf: ' + var_filename_netcdf + ' ====\n')
+    tmp_netcdf_filename = nc_dir_ec2 / var_filename_netcdf
 
+    print('saving netcdf to ', tmp_netcdf_filename)
+    var_HHv2_ds.to_netcdf(str(tmp_netcdf_filename), encoding = encoding_var)
+    var_HHv2_ds.close()
+        
 
 def plot_sassie_HHv2_3D(face_arr, depth_level=0, vmin=None, vmax=None,\
     cmap='jet', axs = None, \
@@ -648,14 +717,30 @@ def plot_sassie_HHv2_3D(face_arr, depth_level=0, vmin=None, vmax=None,\
             fig.colorbar(im1, ax=axs)
 
 
-def create_HH_netcdfs(var, data_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, root_dest_s3_name):
+def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk):
+    """
+    Create netCDF files for a given variable.
+
+    Args:
+        var_name (str): The name of the variable.
+        data_dir_ec2 (str): The directory containing the data files.
+        nc_dir_ec2 (str): The directory to save the netCDF files.
+        metadata_dict (dict): A dictionary containing metadata information.
+        sassie_n1_geometry_ds (Dataset): The dataset containing geometry information.
+        vars_table (DataFrame): A table containing variable information.
+
+    Returns:
+        None
+    """
     
     ## loop through each variable that was requested --------------------------------------------
-    print('#### ==== processing:', var, '==== #### \n')
-    
+    print('\n############ processing:', var_name, '############')
+    start_time = time.time()
+ 
     ## get root directory for variable and then define directory
-    var_tmp_table = vars_table[vars_table.variable.isin([var])]
-    root_filename = var_tmp_table.root_filename.values[0]
+    var_tmp_table = vars_table[vars_table.variable.isin([var_name])]
+
+    #root_filename = var_tmp_table.root_filename.values[0]
     
     ## loop through files in root directory
     data_files = np.sort(list(data_dir_ec2.glob('*.data')))
@@ -671,49 +756,114 @@ def create_HH_netcdfs(var, data_dir_ec2, metadata_dict, sassie_n1_geometry_ds, v
             ## process dataset
             var_HHv2_ds = process_3D_variable(data_dir_ec2, filename, var_tmp_table,\
                                               vars_table, sassie_n1_geometry_ds)
+                                              ## mask land cells
+                
+            #print('\nds after 3d loading')
+            #show_me_the_ds(var_HHv2_ds)
+
+            ## mask land cells
+            var_HHv2_ds = mask_dry_grid_cells(var_HHv2_ds, var_name, sassie_n1_geometry_ds, \
+                                              grid_point=var_tmp_table['cgrid_point'].values)
+            #print('\nds after 3d masking:')
+
         ## 2D data processing 
         elif var_tmp_table['n_dims'].values == '2D':
             ## process dataset
             var_HHv2_ds = process_2D_variable(data_dir_ec2, filename, var_tmp_table,\
                                               vars_table, sassie_n1_geometry_ds)
-        
-        ## mask land cells
-        var_HHv2_ds = mask_dry_grid_cells(var_HHv2_ds, var, sassie_n1_geometry_ds, grid_point=var_tmp_table['cgrid_point'].values)
-        
+            #print('\nds after 2d loading')
+            #show_me_the_ds(var_HHv2_ds)
+
+            ## mask land cells
+            # select out the k=0 level of the geometry dataset
+            var_HHv2_ds = mask_dry_grid_cells(var_HHv2_ds, var_name, sassie_n1_geometry_ds.isel(k=0), \
+                                              grid_point=var_tmp_table['cgrid_point'].values)
+            
+            # 2D datasets have neither k dims nor Z coordinates
+            var_HHv2_ds = var_HHv2_ds.drop_vars(['k','Z'])
+            #print('\nds after 2d masking:')
+            #show_me_the_ds(var_HHv2_ds)
+
+        # drop grid cell corner dims and coordinates
+        var_HHv2_ds = var_HHv2_ds.drop_vars(['i_g','j_g','XG','YG','XC_bnds','YC_bnds'])
+
         ## add metadata
         global_latlon_metadata = metadata_dict['ECCOv4r4_global_metadata_for_all_datasets'] + metadata_dict['ECCOv4r4_global_metadata_for_latlon_datasets']
         var_HHv2_ds = ecco.add_global_metadata(global_latlon_metadata, var_HHv2_ds, var_tmp_table['n_dims'].values[0])
-        var_HHv2_ds = ecco.add_coordinate_metadata(metadata['ECCOv4r4_coordinate_metadata_for_latlon_datasets'], var_HHv2_ds, less_output=True)
-        var_HHv2_ds, grouping_keywords = ecco.add_variable_metadata(metadata['ECCOv4r4_geometry_metadata_for_latlon_datasets'], var_HHv2_ds, less_output=True)
-        var_HHv2_ds, grouping_keywords = ecco.add_variable_metadata(metadata['ECCOv4r4_variable_metadata'], var_HHv2_ds, less_output=True)
+        var_HHv2_ds = ecco.add_coordinate_metadata(metadata_dict['ECCOv4r4_coordinate_metadata_for_latlon_datasets'], var_HHv2_ds, less_output=True)
+        var_HHv2_ds, grouping_keywords = ecco.add_variable_metadata(metadata_dict['ECCOv4r4_geometry_metadata_for_latlon_datasets'], var_HHv2_ds, less_output=True)
+        var_HHv2_ds, grouping_keywords = ecco.add_variable_metadata(metadata_dict['ECCOv4r4_variable_metadata'], var_HHv2_ds, less_output=True)
         
         ## generate filename
         center_time = var_HHv2_ds.time.values
         yyyy_mm_dd = str(center_time)[2:6] + "-" + str(center_time)[7:9] + "-" + str(center_time)[10:12]
-        var_filename_netcdf = var + "_day_mean_" + yyyy_mm_dd + "_ECCO_SASSIE_V1_HH_llc1080.nc"
+        var_filename_netcdf = var_name + "_day_mean_" + yyyy_mm_dd + "_ECCO_SASSIE_V1_HH_llc1080.nc"
         
         ## tweak some of the global attributes
-        var_HHv2_ds = modify_metadata(var_HHv2_ds, var, var_filename_netcdf)
+        var_HHv2_ds = modify_metadata(var_HHv2_ds, var_name, var_filename_netcdf)
         
         ## reorder dims
-        var_HHv2_ds_ordered = reorder_dims(var_HHv2_ds)
+        var_HHv2_ds = reorder_dims(var_HHv2_ds)
         
+        #data_dir_ec2
         ## save netcdf
-        save_sassie_netcdf_to_s3(var_HHv2_ds_ordered, root_dest_s3_name, root_filename, var_filename_netcdf, var)
+        if save_nc_to_disk:
+            save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf)
+        else:
+            print('... not saving nc to disk because save_nc_to_disk==False')
         
+        # remove from memory
+        var_HHv2_ds = None
+
     # return(var_HHv2_ds_final)
-    print("######## processing complete ########")
+    print('processing time ', time.time() - start_time)
+    print("\n######## processing complete ########\n")
+
 
 
 ########### Create final routine to process files ########### 
 
 ## Specify root directory and process all variables in that dataset
 
-def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name, files_to_process):
+def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name, 
+                                 force_redownload, keep_local_files, push_to_s3,
+                                 files_to_process, local_scratch_dir, save_nc_to_disk):
     
+
+    ## get list of gz files in s3 directory
+    s3 = []
+    s3 = s3fs.S3FileSystem(anon=False)
+    
+        
     ## --------------------------------------------
     ## open model geometry from ec2
-    sassie_n1_geometry_ds = xr.open_dataset('/home/jpluser/sassie/GRID_GEOMETRY_SASSIE_HH_V1R1_NATIVE_LLC1080.nc')
+
+    n1_geometry_local_dir =  Path('/home/jpluser/sassie/N1/GRID_GEOMETRY')
+    n1_geometry_local_filename = 'GRID_GEOMETRY_SASSIE_HH_V1R1_NATIVE_LLC1080.nc'
+    n1_geometry_local_full_path = n1_geometry_local_dir / n1_geometry_local_filename
+    n1_geometry_s3_url = 's3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/GRID/GRID_GEOMETRY_SASSIE_HH_V1R1_NATIVE_LLC1080.nc'
+
+    if n1_geometry_local_full_path.is_file(): # checks if file is there
+        print('geometry file already exists')
+    else:
+        # make geometry directory
+        try:
+            print(f"creating geometry directory {n1_geometry_local_dir}")
+            n1_geometry_local_dir.mkdir(exist_ok=False, parents=True)
+        except FileExistsError:
+            print(f"directory {n1_geometry_local_dir} already exists")
+
+        # download geometry file
+        try:
+            s3.download(n1_geometry_s3_url, str(n1_geometry_local_full_path))
+            print(f"downloaded {n1_geometry_s3_url} to {n1_geometry_local_full_path}")
+        except:
+            print(f"could not download {n1_geometry_s3_url} to {n1_geometry_local_full_path}")
+            return
+
+    sassie_n1_geometry_ds = xr.open_dataset(n1_geometry_local_full_path)
+    sassie_n1_geometry_ds.close()
+    print('...geometry file loaded')
     
     ## open table that includes metadata for all variables
     vars_table = pd.read_csv('/home/jpluser/git_repos/SASSIE_downscale_ecco_v5/sassie_variables_table.csv', index_col=False)
@@ -749,19 +899,21 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     ## --------------------------------------------
     ## loop through gz files in root directory and process all variables included in the dataset
     
-    ## get list of gz files in s3 directory
-    s3 = []
-    s3 = s3fs.S3FileSystem(anon=False)
-    
+    print(f'force redownload: {force_redownload}')
+
     # find filenames
     file_list = np.sort(s3.glob(f'{root_s3_name}{root_filenames}/*tar.gz'))
 
+    print(f'number of files in bucket: {len(file_list)}')
+    print(f'first file in bucket : {file_list[0]}')
+    print(f'last file in bucket  : {file_list[-1]}')
+      
     # construct url form of filenames
     data_urls = [
             's3://' + f
             for f in file_list
         ]
-    
+
     ## specify start and end indices or process all files   
     if len(files_to_process) == 2: # two numbers indicates a range (two indices)
         data_urls_select = data_urls[files_to_process[0]:files_to_process[1]]
@@ -772,31 +924,93 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
     else:
         print("invalid entry for `files_to_process` argument")
     
+    print(f'number of files to process: {files_to_process}')
+    print(f'first file to process : {files_to_process[0]}')
+    print(f'last file to process  : {files_to_process[-1]}')
+
+    s3 = []
+    s3 = s3fs.S3FileSystem(anon=False)
     for data_url in data_urls_select:
-        ## download tar.gz file from s3 cloud to ec2 tmp_dir
-        s3 = []
-        s3 = s3fs.S3FileSystem(anon=False)
-        s3.download(data_url, "/home/jpluser/sassie/tmp_gz/" + data_url.split("/")[-1])
         
+        print('\n==== processing file:', data_url, '====\n')
+
+        
+        ## download tar.gz file from s3 cloud to ec2 tmp_dir
+        gz_filename = data_url.split("/")[-1]
+
+        gz_tmp_dir_base = f"{gz_filename.split('.')[0]}_{gz_filename.split('.')[1]}"
+        gz_dir_ec2 =  Path(f"{local_scratch_dir}/tmp_gz/{gz_tmp_dir_base}")
+        nc_root_dir_ec2 =  Path(f"{local_scratch_dir}/tmp_nc/{gz_tmp_dir_base}")
+
+        print(f'temporary gz directory {gz_dir_ec2}')
+        print(f'temporary nc directory {nc_root_dir_ec2}')
+
+        gz_dir_ec2.mkdir(exist_ok=True, parents=True)
+        nc_root_dir_ec2.mkdir(exist_ok=True, parents=True)
+
+        gz_full_path = gz_dir_ec2 / gz_filename
+        print(gz_filename, gz_full_path)
+        
+        # download gz file
+        if (not gz_full_path.is_file()) or (force_redownload): # checks if file is there
+            start_time_a = time.time()
+            print(f'gz file needs to be downloaded: isfile()={gz_full_path.is_file()} or force_redownload: {force_redownload}')
+            s3.download(data_url, str(gz_full_path))
+            print('...download time ', time.time() - start_time_a)
+        else: 
+            print(f'...not downloading gz because local gz is present: isfile()={gz_full_path.is_file()}')
+            
         ## decompress tar.gz file into *.data and *.meta files
-        data_dir_ec2 = Path('/home/jpluser/sassie/tmp_gz/')
-        unpack_tar_gz_files(data_dir_ec2)
-         
-        ## use table to identify which variables are in the dataset
+        start_time_a = time.time()
+        unpack_tar_gz_files(gz_dir_ec2, keep_local_files)
+        print('...unpack gz time ', time.time() - start_time_a)
+        
+        ## identify which variables are in the dataset using vars_table
         vars_in_dataset = vars_table[vars_table.root_filename.isin([root_filenames])].variable.values
     
-        ## loop through variables in dataset and generate netcdfs
-        for var in vars_in_dataset:
-        
+        ## create netcdfs for each different variable type in the *.data files
+        # stored in the gz_dir_ec2 directory
+
+        for var_name in vars_in_dataset:
             ## generate netcdfs for variable
-            create_HH_netcdfs(var, data_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, root_dest_s3_name)
-   
+            nc_dir_ec2 = nc_root_dir_ec2 / var_name
+            try:
+                nc_dir_ec2.mkdir(exist_ok=True, parents=True)
+            except :
+                print(f"could not make {nc_dir_ec2} ")
+                return
+            
+            start_time_a = time.time()
+            create_HH_netcdfs(var_name, gz_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
+            print('...create HH time ', time.time() - start_time_a)
+
+            # push nc files to aws s3
+            if push_to_s3:
+                start_time_b = time.time()
+                print('>> pushing contents of nc dir to s3')
+                push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name)
+                print('s3 push time ', time.time() - start_time_b)
+            else:
+                print('>> not pushing files to s3')
+       
+            if keep_local_files:
+                print('>> keeping local nc and gz directories')
+            else:
+                ## remove tmp nc var directory and all of its contents
+                print(">> removing tmp nc dir ", nc_dir_ec2)
+                os.system(f"rm -rf {nc_dir_ec2}")
+
         ## after processing is complete, delete data files on ec2
-        print("==== deleting ec2 data files ====\n")
-        
-        ## remove tmp tar.gz files
-        os.system(f"rm -rf {str(data_dir_ec2)}/*")
-        
+                
+        if keep_local_files:
+            print('>> keeping local gz directories')
+        else:
+            ## remove tmp tar.gz files
+            print(">> removing tmp gz dir")
+            os.system(f"rm -rf {str(gz_dir_ec2)}")
+
+            print(">> removing tmp nc root dir ", nc_root_dir_ec2)
+            os.system(f"rm -rf {str(nc_root_dir_ec2)}")
         
 
 if __name__ == '__main__':
@@ -814,14 +1028,55 @@ if __name__ == '__main__':
                         help="The destination s3 bucket where processed netcdfs will be stored (e.g., s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/).", 
                         dest="root_dest_s3_name", type=str, required=True)
 
+    parser.add_argument("--force_redownload", action="store_true",
+                        help="Boolean to indicate whether to redownload tar.gz files from s3 bucket.")
+    
+    parser.add_argument("--keep_local_files", action="store_true",
+                        help="Boolean to indicate whether to keep local files on ec2 instance after processing.")
+    
+    parser.add_argument("--push_to_s3", action="store_true",
+                        help="Boolean to indicate whether to keep send netcdf files to s3 bucket after processing.")
+
+    parser.add_argument("--save_nc_to_disk", action="store_true",
+                        help="Boolean to indicate whether to keep save netcdf files to local disk after processing.")
+
     parser.add_argument("-p", "--files_to_process", action="store",
                         help="String specifying whether to process all files (-1), one file (one number as index), or range (start end).",
-                        dest="files_to_process", type=list, required=False, default = [-1])
+                        dest="files_to_process", nargs="*", type=int, required=False, default = [-1])
 
+    parser.add_argument("-l", "--local_scratch_dir", action="store",   
+                        help="The local scratch directory on the ec2 instance where files will be stored temporarily.", 
+                        dest="local_scratch_dir", type=str, required=True)
+    
     args = parser.parse_args()
+
     root_filenames = args.root_filenames
     root_s3_name = args.root_s3_name
     root_dest_s3_name = args.root_dest_s3_name
+    force_redownload = args.force_redownload
+    keep_local_files = args.keep_local_files
+    push_to_s3 = args.push_to_s3
     files_to_process = args.files_to_process
+    save_nc_to_disk = args.save_nc_to_disk
+    local_scratch_dir = args.local_scratch_dir
 
-    generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name, files_to_process)
+    if save_nc_to_disk == False:
+       push_to_s3 = False
+       print('save_nc_to_disk is not set, so push_to_s3 set to false') 
+
+    print('root_filenames ', root_filenames)
+    print('root_s3_name ' , root_s3_name)
+    print('root_dest_s3_name ', root_dest_s3_name)
+    print('force_redownload ', force_redownload)
+    print('files_to_process ', files_to_process)
+    print('keep_local_files ', keep_local_files)
+    print('push_to_s3 ', push_to_s3)
+    print('save_nc_to_disk ', save_nc_to_disk)
+    print('local_scratch_dir ', local_scratch_dir)
+
+    generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, \
+                                 root_dest_s3_name, force_redownload, \
+                                 keep_local_files, push_to_s3, files_to_process, \
+                                 local_scratch_dir, save_nc_to_disk)
+
+
