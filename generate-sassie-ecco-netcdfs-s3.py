@@ -647,7 +647,7 @@ def modify_metadata(ds, var, var_filename_netcdf):
         ds.attrs['geospatial_vertical_min'] = np.round(ds.Zu.min().values,1)
         
     ds.attrs['geospatial_lat_min'] = np.round(ds.YC.min().values,1)
-    ds.attrs['metadata_link'] = 'https://cmr.earthdata.nasa.gov/search/collections.umm_json?ShortName=XXXX_L4_GEOMETRY_LLC1080GRID_V1R1' # will update with DOI when avail
+    ds.attrs['metadata_link'] = 'https://cmr.earthdata.nasa.gov/search/collections.umm_json?ShortName=TBD' # will update with DOI when avail
     ds.attrs['product_name'] = var_filename_netcdf
     ds.attrs['time_coverage_end'] = str(ds.time_bnds.values[0][0])[:-10]
     ds.attrs['time_coverage_start'] = str(ds.time_bnds.values[0][1])[:-10]
@@ -658,6 +658,7 @@ def modify_metadata(ds, var, var_filename_netcdf):
     ds.attrs['summary'] = 'This dataset provides data variable and geometric parameters for the lat-lon-cap 1080 (llc1080) native model grid from the SASSIE ECCO ocean model Version 1 Release 1 (V1r1) ocean and sea-ice state estimate.'
     ds.attrs['title'] = title
     ds.attrs['uuid'] = str(uuid.uuid1())
+    ds.attrs['history'] ='Initial release of the ECCO N1 Sassie Ocean-Sea Ice Simulation'
     
     ## remove some attributes we don't need
     attributes_to_remove = ['product_time_coverage_start', 'product_time_coverage_end',\
@@ -712,12 +713,19 @@ def push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name):
     """
     ## push file to s3 bucket
     mybucket = root_dest_s3_name + var_name + "_AVG_DAILY"
-    print(f'\n>pushing netcdf files in {nc_dir_ec2} to s3 bucket : {mybucket}')
+    nc_files = list(nc_dir_ec2.glob('*.nc'))
 
-    cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
-    print(f'... aws command: {cmd}')
-    with suppress_stdout():
-       os.system(cmd)
+    print(f'\n>pushing netcdf files in {nc_dir_ec2} to s3 bucket : {mybucket}')
+    print(f'... looking for *.nc files in {nc_dir_ec2}')
+    print(f'... found {len(nc_files)} nc files to upload')
+
+    if len(nc_files)>0:
+        cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
+        print(f'... aws command: {cmd}')
+        with suppress_stdout():
+           os.system(cmd)
+    else:
+        print("... nothing to upload!") 
 
 
 @time_it
