@@ -2,7 +2,8 @@
 
 # takes two arguments, the first is the gz file index to start, the second is the gz file index to end
 #declare -a arr=("ocean_vel_day_mean" "KPP_mix_day_mean" "tr_adv_r_day_mean")
-declare -a arr=("KPP_mix_day_mean")
+#declare -a arr=("KPP_mix_day_mean")
+declare -a arr=("vol_adv_day_mean" "phi_3D_day_mean")
 
 ## now loop through the above array
 for x in "${arr[@]}"
