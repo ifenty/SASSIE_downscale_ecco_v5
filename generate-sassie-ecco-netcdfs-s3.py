@@ -1004,7 +1004,7 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
         # download gz file
         if (not gz_full_path.is_file()) or (force_redownload): # checks if file is there
             start_time_a = time.time()
-            print(f'...gz file needs to be downloaded: isfile()={gz_full_path.is_file()} or force_redownload: {force_redownload}')
+            print(f'... gz file needs to be downloaded: isfile()={gz_full_path.is_file()} or force_redownload: {force_redownload}')
             s3.download(data_url, str(gz_full_path))
             print('... download time ', time.time() - start_time_a)
         else: 
