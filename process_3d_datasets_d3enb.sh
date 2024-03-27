@@ -11,16 +11,17 @@ declare -a arr=("vol_adv_day_mean")
 for x in "${arr[@]}"
 do
 
-  for i in `seq 0 20`
+  for i in `seq 0 19`
   do
-    sn=$((i * 10))
-    en=$((sn+10))
+    sn=$((i))
+    en=$((sn+1))
     fsn=$(printf "%0*d" 3 $sn)
     fen=$(printf "%0*d" 3 $en)
-    disk=$((sn / 20 +1))
+    disk=$((sn / 2 +1))
     echo $sn $en $fsn $fen $disk
     #s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/ 
-    cmd="python generate-sassie-ecco-netcdfs-s3.py  --root_filenames $x  --root_s3_name s3://ecco-model-granules/SASSIE/N1/  --root_dest_s3_name s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/   --files_to_process $sn $en  -l /data${disk}  --push_to_s3  --save_nc_to_disk 1> ${x}_${fsn}_${fen}.log 2> ${x}_${fsn}_${fen}.err.log &"
+    cmd="python generate-sassie-ecco-netcdfs-s3.py  --root_filenames $x  --root_s3_name s3://ecco-model-granules/SASSIE/N1/  --root_dest_s3_name s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/   --files_to_process $sn $en  -l /nvme_data${disk}  --push_to_s3  --save_nc_to_disk 1> ${x}_${fsn}_${fen}.log 2> ${x}_${fsn}_${fen}.err.log &"
+    echo $cmd
     eval $cmd
 
   done
