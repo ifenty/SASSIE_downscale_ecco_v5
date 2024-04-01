@@ -720,7 +720,10 @@ def push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name):
     print(f'... found {len(nc_files)} nc files to upload')
 
     if len(nc_files)>0:
-        cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
+        if 'podaac-dev' in root_dest_s3_name:
+           cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress --profile sassie > /dev/null 2>&1"
+        else:
+           cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
         print(f'... aws command: {cmd}')
         with suppress_stdout():
            os.system(cmd)
