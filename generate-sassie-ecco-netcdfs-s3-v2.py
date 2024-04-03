@@ -700,33 +700,46 @@ def reorder_dims(xr_dataset):
 
 
 @time_it
-def push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name):
+def push_nc_dir_to_ec2(nc_root_dir_ec2, root_dest_s3_name):
     """
     Pushes the netcdf files from a directory to an S3 bucket.
 
     Args:
-        nc_dir_ec2 (str): The path to the directory containing the netcdf files on the EC2 instance.
+        nc_root_dir_ec2 (str): The root directory containing the netcdf files on the EC2 instance.
         root_dest_s3_name (str): The root name of the S3 bucket where the files will be pushed.
-        var_name (str): The name of the variable used to create the S3 bucket.
 
     Returns:
         None
     """
-    ## push file to s3 bucket
-    mybucket = root_dest_s3_name + var_name + "_AVG_DAILY"
-    nc_files = list(nc_dir_ec2.glob('*.nc'))
+    ## upload each subdirectory in the nc root directory
+    
+    # Get a list of all items (files and folders) in the directory
+    all_subdirs = os.listdir(nc_root_dir_ec2)
 
-    print(f'\n>pushing netcdf files in {nc_dir_ec2} to s3 bucket : {mybucket}')
-    print(f'... looking for *.nc files in {nc_dir_ec2}')
-    print(f'... found {len(nc_files)} nc files to upload')
-
-    if len(nc_files)>0:
-        cmd=f"aws s3 cp {nc_dir_ec2} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
-        print(f'... aws command: {cmd}')
-        with suppress_stdout():
-           os.system(cmd)
-    else:
-        print("... nothing to upload!") 
+    for subdir_name in all_subdirs:
+        if subdir != '.ipynb_checkpoints':
+            print(subdir)
+            
+            
+            ## push file to s3 bucket
+            mybucket = root_dest_s3_name + subdir_name
+            subdir_fullpath = Path(nc_root_dir_ec2 / subdir_name)
+            nc_files = list(subdir_fullpath.glob('*.nc'))
+    
+            print(f'\n>pushing netcdf files in {subdir_name} to s3 bucket : {mybucket}')
+            print(f'... looking for *.nc files in {subdir_name}')
+            print(f'... found {len(nc_files)} nc files to upload')
+    
+            if len(nc_files)>0:
+                cmd=f"aws s3 cp {subdir_fullpath} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
+                print(f'... aws command: {cmd}')
+                with suppress_stdout():
+                   os.system(cmd)
+            else:
+                print("... nothing to upload!") 
+            
+        else:
+            print(f"No subdirectories found in {nc_root_dir_ec2}")
 
 
 @time_it
@@ -771,14 +784,14 @@ def plot_sassie_HHv2_3D(face_arr, depth_level=0, vmin=None, vmax=None,\
             fig.colorbar(im1, ax=axs)
 
 @time_it
-def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk):
+def create_HH_netcdfs(data_filename, data_dir_ec2, nc_root_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk):
     """
-    Create netCDF files for a given variable.
+    Create netCDF files for all variables in a given file.
 
     Args:
-        var_name (str): The name of the variable.
+        data_filename (str): The name *.data filename.
         data_dir_ec2 (str): The directory containing the data files.
-        nc_dir_ec2 (str): The directory to save the netCDF files.
+        nc_root_dir_ec2 (str): The root directory where all netCDF files are saved.
         metadata_dict (dict): A dictionary containing metadata information.
         sassie_n1_geometry_ds (Dataset): The dataset containing geometry information.
         vars_table (DataFrame): A table containing variable information.
@@ -788,32 +801,32 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
     """
     
     ## loop through each variable that was requested --------------------------------------------
-    print('\n############ processing:', var_name, '############')
- 
-    ## get root directory for variable and then define directory
-    var_tmp_table = vars_table[vars_table.variable.isin([var_name])]
-
-    ## loop through files in root directory
-    data_files = np.sort(list(data_dir_ec2.glob('*.data')))
-   
-    if len(data_files) == 0:
-       print('... no data files to process in {data_dir_ec2}')   
-       return
-    else:
-       print(f'found {len(data_files)} *.data files in {data_dir_ec2}')  
-
-    print(f'... save_nc_to_disk=={save_nc_to_disk}')
-
-    for file in data_files:
-        print('>> processing: ', file)
+    
+    print('\n############ processing:', data_filename, '############')
+    
+    ## identify variables in this dataset
+    meta_file_path = str(data_dir_ec2) + "/" + data_filename[:-5] + ".meta"
+    meta_file_dict = MITgcmutils.mds.parsemeta(meta_file_path)
+    vars_in_dataset = meta_dict['fldList']
+    
+    for variable in vars_in_dataset:
         
-        ## get filename
-        filename = str(file).split('/')[-1]
+        ## create directory for variable
+        nc_dir_ec2 = nc_root_dir_ec2 + "/" + variable + "_AVG_DAILY"
+        try:
+            nc_dir_ec2.mkdir(exist_ok=True, parents=True)
+        except :
+            print(f"ERROR: could not make {nc_dir_ec2} ")
+            exit()
+        
+        ## get variable data from table
+        var_tmp_table = vars_table[vars_table.variable.isin([variable])]
+        print('>> processing: ', variable)
         
         ## 3D data processing
         if var_tmp_table['n_dims'].values == '3D':
             ## process dataset
-            var_HHv2_ds = process_3D_variable(data_dir_ec2, filename, var_tmp_table,\
+            var_HHv2_ds = process_3D_variable(data_dir_ec2, data_filename, var_tmp_table,\
                                               vars_table, sassie_n1_geometry_ds)
                                               ## mask land cells
                 
@@ -828,7 +841,7 @@ def create_HH_netcdfs(var_name, data_dir_ec2, nc_dir_ec2, metadata_dict, sassie_
         ## 2D data processing 
         elif var_tmp_table['n_dims'].values == '2D':
             ## process dataset
-            var_HHv2_ds = process_2D_variable(data_dir_ec2, filename, var_tmp_table,\
+            var_HHv2_ds = process_2D_variable(data_dir_ec2, data_filename, var_tmp_table,\
                                               vars_table, sassie_n1_geometry_ds)
             #print('\nds after 2d loading')
             #show_me_the_ds(var_HHv2_ds)
@@ -1021,52 +1034,39 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
             
         ## decompress tar.gz file into *.data and *.meta files
         unpack_tar_gz_files(gz_dir_ec2, keep_local_files)
-        
-        
-        
-        ### ==== OLD CODE ==== ###
-        ## identify which variables are in the dataset using vars_table
-        vars_in_dataset = vars_table[vars_table.root_filename.isin([root_filenames])].variable.values
-        ### ================== ###
-        
-        ### ==== NEW CODE USING META FILE ==== ###
-        ## open *.meta file and read in variables
-        file_path = gz_full_path + 'ocean_state_2D_day_mean.0005796720.meta'
-        meta_file_dict = MITgcmutils.mds.parsemeta(file_path)
-        vars_in_dataset = meta_dict['fldList']
-        ### ================================== ###
     
-    
-    
-        # create DataSets for each different variable type in the *.data files
-        # stored in the gz_dir_ec2 directory
-        # and possibly store to disk if 'save_nc_to_disk==True'
-        for var_name in vars_in_dataset:
-            nc_dir_ec2 = nc_root_dir_ec2 / var_name
-            try:
-                nc_dir_ec2.mkdir(exist_ok=True, parents=True)
-            except :
-                print(f"ERROR: could not make {nc_dir_ec2} ")
-                exit()
+        ## loop through each *.data file stored in the gz_dir_ec2 directory and process all variables within it
+        ## create DataSets for each variable type within the *.data files
+        ## and possibly store to disk if 'save_nc_to_disk==True'
+        data_files = np.sort(list(gz_dir_ec2.glob('*.data')))
+        
+        if len(data_files) == 0:
+           print('... no data files to process in {data_dir_ec2}')   
+           return
+        else:
+           print(f'found {len(data_files)} *.data files in {gz_dir_ec2}')  
+        
+        for data_file in data_files:
             
-            create_HH_netcdfs(var_name, gz_dir_ec2, nc_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
-
-            # push nc files to aws s3
-            if push_to_s3:
-                push_nc_dir_to_ec2(nc_dir_ec2, root_dest_s3_name, var_name)
-            else:
-                print('> not pushing files to s3')
-       
-            print('\n> cleaning up local nc files') 
-            if keep_local_files:
-                print('... keeping local nc  directories')
-            else:
-                ## remove tmp nc var directory and all of its contents
-                print("... removing tmp nc dir ", nc_dir_ec2)
-                os.system(f"rm -rf {nc_dir_ec2}")
-
+            ## process all variables in the dataset stored in the gz_dir_ec2 directory
+            create_HH_netcdfs(data_file, gz_dir_ec2, nc_root_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
+        
         ## after processing is complete, delete data files on ec2
-               
+        ## push nc files to aws s3
+        if push_to_s3:
+            push_nc_dir_to_ec2(nc_root_dir_ec2, root_dest_s3_name)
+        else:
+            print('> not pushing files to s3')
+    
+        print('\n> cleaning up local nc files') 
+        if keep_local_files:
+            print('... keeping local nc  directories')
+        else:
+            ## remove tmp nc var directory and all of its contents
+            print("... removing tmp nc dir ", nc_dir_ec2)
+            os.system(f"rm -rf {nc_dir_ec2}")
+        
+        
         print('\n> cleaning up local gz directories')
         if keep_local_files:
             print('... keeping local gz directories')
