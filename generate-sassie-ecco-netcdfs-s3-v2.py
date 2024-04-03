@@ -22,6 +22,7 @@ import time
 import gzip
 import traceback
 from contextlib import contextmanager
+import MITgcmutils
 
 ## import ECCO utils
 import sys
@@ -1020,6 +1021,22 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
             
         ## decompress tar.gz file into *.data and *.meta files
         unpack_tar_gz_files(gz_dir_ec2, keep_local_files)
+        
+        
+        
+        ### ==== OLD CODE ==== ###
+        ## identify which variables are in the dataset using vars_table
+        vars_in_dataset = vars_table[vars_table.root_filename.isin([root_filenames])].variable.values
+        ### ================== ###
+        
+        ### ==== NEW CODE USING META FILE ==== ###
+        ## open *.meta file and read in variables
+        file_path = gz_full_path + 'ocean_state_2D_day_mean.0005796720.meta'
+        meta_file_dict = MITgcmutils.mds.parsemeta(file_path)
+        vars_in_dataset = meta_dict['fldList']
+        ### ================================== ###
+    
+    
     
         # create DataSets for each different variable type in the *.data files
         # stored in the gz_dir_ec2 directory
