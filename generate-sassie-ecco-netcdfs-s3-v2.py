@@ -637,6 +637,28 @@ def create_encoding(ecco_ds, output_array_precision = np.float32):
 
 
 def modify_metadata(ds, var, var_filename_netcdf):   
+    
+    ## KPP variable metadata is not included on ECCO json so need to manually add it here:
+    if var == 'KPPdiffS':
+        ds[var].attrs['long_name'] = "Vertical diffusion coefficient for salt and tracers"
+        # ds[var].attrs['standard_name'] = ""
+        ds[var].attrs['units'] = "m^2/s"
+        # ds[var].attrs['comment'] = ""
+        ds[var].attrs['coverage_content_type'] = "modelResult"
+    if var == 'KPPdiffT':
+        ds[var].attrs['long_name'] = "Vertical diffusion coefficient for heat"
+        # ds[var].attrs['standard_name'] = ""
+        ds[var].attrs['units'] = "m^2/s"
+        # ds[var].attrs['comment'] = ""
+        ds[var].attrs['coverage_content_type'] = "modelResult"
+    if var == 'KPPviscA':
+        ds[var].attrs['long_name'] = "KPP vertical eddy viscosity coefficient"
+        # ds[var].attrs['standard_name'] = ""
+        ds[var].attrs['units'] = "m^2/s"
+        # ds[var].attrs['comment'] = ""
+        ds[var].attrs['coverage_content_type'] = "modelResult"
+    
+    ## add title
     title = 'SASSIE Ocean Model ' + var + ' Parameter for the Lat-Lon-Cap 1080 (llc1080) Native Model Grid (Version 1 Release 1)'
   
     ## edit specific metadata for these datasets
