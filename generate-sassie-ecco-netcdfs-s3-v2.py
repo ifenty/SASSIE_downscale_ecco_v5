@@ -457,10 +457,10 @@ def make_3D_HHv2_ds(field_HH, model_grid_ds, timestamp, grid_point, da_name, k_f
     return tmp_ds
 
 
-def process_2D_variable(data_dir, filename, var_tmp_table, vars_table, sassie_n1_geometry_ds):
+def process_2D_variable(data_dir, filename, fldList_index, var_tmp_table, vars_table, sassie_n1_geometry_ds):
     
     var_name = var_tmp_table['variable'].values[0]
-    n_skip = var_tmp_table['field_index'].values[0] * 1
+    n_skip = fldList_index * 1
     grid_point = var_tmp_table.cgrid_point.values
     
     ## process binary data to compact format
@@ -504,12 +504,12 @@ def process_2D_variable(data_dir, filename, var_tmp_table, vars_table, sassie_n1
     return var_HHv2_ds
 
 
-def process_3D_variable(data_dir, filename, var_tmp_table, vars_table, sassie_n1_geometry_ds):
+def process_3D_variable(data_dir, filename, fldList_index, var_tmp_table, vars_table, sassie_n1_geometry_ds):
     
     var_name = var_tmp_table['variable'].values[0]
     
     ## there are 90 vertical levels; use index from table to identify how many fields to skip
-    n_skip = var_tmp_table['field_index'].values[0] * 90
+    n_skip = fldList_index * 90
     var_k_face = var_tmp_table['k_face'].values[0]
     grid_point = var_tmp_table.cgrid_point.values
     
@@ -754,7 +754,7 @@ def save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf):
     encoding_var = create_encoding(var_HHv2_ds, output_array_precision = np.float32)
     
     ## stage netcdf on tmp directory on ec2
-    tmp_netcdf_filename = nc_dir_ec2 / var_filename_netcdf
+    tmp_netcdf_filename = str(nc_dir_ec2) + "/" + var_filename_netcdf
 
     print('   saving netcdf to ', tmp_netcdf_filename)
     var_HHv2_ds.to_netcdf(str(tmp_netcdf_filename), encoding = encoding_var)
@@ -807,12 +807,15 @@ def create_HH_netcdfs(data_filename, data_dir_ec2, nc_root_dir_ec2, metadata_dic
     ## identify variables in this dataset
     meta_file_path = str(data_dir_ec2) + "/" + data_filename[:-5] + ".meta"
     meta_file_dict = MITgcmutils.mds.parsemeta(meta_file_path)
-    vars_in_dataset = meta_dict['fldList']
+    vars_in_dataset = meta_file_dict['fldList']
     
-    for variable in vars_in_dataset:
+    for i in range(len(vars_in_dataset)):
+        
+        var_name = vars_in_dataset[i]
+        fldList_index = i
         
         ## create directory for variable
-        nc_dir_ec2 = nc_root_dir_ec2 + "/" + variable + "_AVG_DAILY"
+        nc_dir_ec2 = nc_root_dir_ec2 + "/" + var_name + "_AVG_DAILY"
         try:
             nc_dir_ec2.mkdir(exist_ok=True, parents=True)
         except :
@@ -820,15 +823,14 @@ def create_HH_netcdfs(data_filename, data_dir_ec2, nc_root_dir_ec2, metadata_dic
             exit()
         
         ## get variable data from table
-        var_tmp_table = vars_table[vars_table.variable.isin([variable])]
-        print('>> processing: ', variable)
+        var_tmp_table = vars_table[vars_table.variable.isin([var_name])]
+        print('>> processing: ', var_name)
         
         ## 3D data processing
         if var_tmp_table['n_dims'].values == '3D':
             ## process dataset
-            var_HHv2_ds = process_3D_variable(data_dir_ec2, data_filename, var_tmp_table,\
+            var_HHv2_ds = process_3D_variable(data_dir_ec2, data_filename, fldList_index, var_tmp_table,\
                                               vars_table, sassie_n1_geometry_ds)
-                                              ## mask land cells
                 
             #print('\nds after 3d loading')
             #show_me_the_ds(var_HHv2_ds)
@@ -841,7 +843,7 @@ def create_HH_netcdfs(data_filename, data_dir_ec2, nc_root_dir_ec2, metadata_dic
         ## 2D data processing 
         elif var_tmp_table['n_dims'].values == '2D':
             ## process dataset
-            var_HHv2_ds = process_2D_variable(data_dir_ec2, data_filename, var_tmp_table,\
+            var_HHv2_ds = process_2D_variable(data_dir_ec2, data_filename, fldList_index, var_tmp_table,\
                                               vars_table, sassie_n1_geometry_ds)
             #print('\nds after 2d loading')
             #show_me_the_ds(var_HHv2_ds)
