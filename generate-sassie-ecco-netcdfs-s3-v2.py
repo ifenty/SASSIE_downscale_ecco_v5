@@ -77,6 +77,7 @@ def load_sassie_N1_field(file_dir, fname, nk=1, skip=0):
     num_cols = 680*4 + 1080
     num_rows = 1080
     
+    fname = str(fname)
     time_level = int(fname.split('.data')[0].split('.')[-1])
     
     tmp_compact = ecco.load_binary_array(file_dir, fname, \
@@ -722,7 +723,7 @@ def reorder_dims(xr_dataset):
 
 
 @time_it
-def push_nc_dir_to_ec2(nc_root_dir_ec2, root_dest_s3_name):
+def push_nc_dir_from_ec2(nc_root_dir_ec2, root_dest_s3_name):
     """
     Pushes the netcdf files from a directory to an S3 bucket.
 
@@ -739,13 +740,12 @@ def push_nc_dir_to_ec2(nc_root_dir_ec2, root_dest_s3_name):
     all_subdirs = os.listdir(nc_root_dir_ec2)
 
     for subdir_name in all_subdirs:
-        if subdir != '.ipynb_checkpoints':
-            print(subdir)
-            
+        if subdir_name != '.ipynb_checkpoints':
+            print(subdir_name)
             
             ## push file to s3 bucket
             mybucket = root_dest_s3_name + subdir_name
-            subdir_fullpath = Path(nc_root_dir_ec2 / subdir_name)
+            subdir_fullpath = Path(nc_root_dir_ec2 + "/" + subdir_name)
             nc_files = list(subdir_fullpath.glob('*.nc'))
     
             print(f'\n>pushing netcdf files in {subdir_name} to s3 bucket : {mybucket}')
@@ -827,7 +827,7 @@ def create_HH_netcdfs(data_filename, data_dir_ec2, nc_root_dir_ec2, metadata_dic
     print('\n############ processing:', data_filename, '############')
     
     ## identify variables in this dataset
-    meta_file_path = str(data_dir_ec2) + "/" + data_filename[:-5] + ".meta"
+    meta_file_path = str(data_dir_ec2) + "/" + str(data_filename)[:-5] + ".meta"
     meta_file_dict = MITgcmutils.mds.parsemeta(meta_file_path)
     vars_in_dataset = meta_file_dict['fldList']
     
@@ -838,6 +838,7 @@ def create_HH_netcdfs(data_filename, data_dir_ec2, nc_root_dir_ec2, metadata_dic
         
         ## create directory for variable
         nc_dir_ec2 = nc_root_dir_ec2 + "/" + var_name + "_AVG_DAILY"
+        nc_dir_ec2 = Path(nc_dir_ec2)
         try:
             nc_dir_ec2.mkdir(exist_ok=True, parents=True)
         except :
@@ -1072,13 +1073,16 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
         
         for data_file in data_files:
             
+            ## get filename
+            filename = str(data_file).split('/')[-1]
+            
             ## process all variables in the dataset stored in the gz_dir_ec2 directory
-            create_HH_netcdfs(data_file, gz_dir_ec2, nc_root_dir_ec2, metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
+            create_HH_netcdfs(filename, gz_dir_ec2, str(nc_root_dir_ec2), metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
         
         ## after processing is complete, delete data files on ec2
         ## push nc files to aws s3
         if push_to_s3:
-            push_nc_dir_to_ec2(nc_root_dir_ec2, root_dest_s3_name)
+            push_nc_dir_from_ec2(str(nc_root_dir_ec2), root_dest_s3_name)
         else:
             print('> not pushing files to s3')
     
@@ -1087,8 +1091,8 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
             print('... keeping local nc  directories')
         else:
             ## remove tmp nc var directory and all of its contents
-            print("... removing tmp nc dir ", nc_dir_ec2)
-            os.system(f"rm -rf {nc_dir_ec2}")
+            print("... removing tmp nc root dir ", nc_root_dir_ec2)
+            os.system(f"rm -rf {str(nc_root_dir_ec2)}")
         
         
         print('\n> cleaning up local gz directories')
@@ -1098,9 +1102,6 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
             ## remove tmp tar.gz files
             print("... removing tmp gz dir")
             os.system(f"rm -rf {str(gz_dir_ec2)}")
-
-            print("... removing tmp nc root dir ", nc_root_dir_ec2)
-            os.system(f"rm -rf {str(nc_root_dir_ec2)}")
 
         print(f'\n==== done processing file: {gz_filename} ====\n')
         
