@@ -745,7 +745,7 @@ def push_nc_dir_from_ec2(nc_root_dir_ec2, root_dest_s3_name):
             
             ## push file to s3 bucket
             mybucket = root_dest_s3_name + subdir_name
-            subdir_fullpath = Path("/home/jpluser/git_repos/SASSIE_downscale_ecco_v5/" + nc_root_dir_ec2 + "/" + subdir_name)
+            subdir_fullpath = Path(nc_root_dir_ec2 + "/" + subdir_name + "/")
             nc_files = list(subdir_fullpath.glob('*.nc'))
     
             print(f'\n>pushing netcdf files in {subdir_name} to s3 bucket : {mybucket}')
@@ -753,7 +753,7 @@ def push_nc_dir_from_ec2(nc_root_dir_ec2, root_dest_s3_name):
             print(f'... found {len(nc_files)} nc files to upload')
     
             if len(nc_files)>0:
-                cmd=f"aws s3 cp {subdir_fullpath} {mybucket}/ --recursive --include '*.nc' --no-progress > /dev/null 2>&1"
+                cmd=f"aws s3 cp {subdir_fullpath} {mybucket}/ --recursive --include '*.nc' --no-progress --profile sassie > /dev/null 2>&1"
                 print(f'... aws command: {cmd}')
                 with suppress_stdout():
                    os.system(cmd)
@@ -779,7 +779,7 @@ def save_sassie_netcdf_to_ec2(var_HHv2_ds, nc_dir_ec2, var_filename_netcdf):
     tmp_netcdf_filename = str(nc_dir_ec2) + "/" + var_filename_netcdf
 
     print('   saving netcdf to ', tmp_netcdf_filename)
-    var_HHv2_ds.to_netcdf(str(tmp_netcdf_filename), encoding = encoding_var)
+    var_HHv2_ds.to_netcdf(tmp_netcdf_filename, encoding = encoding_var)
     var_HHv2_ds.close()
         
 
@@ -827,7 +827,7 @@ def create_HH_netcdfs(data_filename, data_dir_ec2, nc_root_dir_ec2, metadata_dic
     print('\n############ processing:', data_filename, '############')
     
     ## identify variables in this dataset
-    meta_file_path = str(data_dir_ec2) + "/" + str(data_filename)[:-5] + ".meta"
+    meta_file_path = data_dir_ec2 + "/" + str(data_filename)[:-5] + ".meta"
     meta_file_dict = MITgcmutils.mds.parsemeta(meta_file_path)
     vars_in_dataset = meta_file_dict['fldList']
     
@@ -1077,7 +1077,7 @@ def generate_sassie_ecco_netcdfs(root_filenames, root_s3_name, root_dest_s3_name
             filename = str(data_file).split('/')[-1]
             
             ## process all variables in the dataset stored in the gz_dir_ec2 directory
-            create_HH_netcdfs(filename, gz_dir_ec2, str(nc_root_dir_ec2), metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
+            create_HH_netcdfs(filename, str(gz_dir_ec2), str(nc_root_dir_ec2), metadata_dict, sassie_n1_geometry_ds, vars_table, save_nc_to_disk)
         
         ## after processing is complete, delete data files on ec2
         ## push nc files to aws s3
