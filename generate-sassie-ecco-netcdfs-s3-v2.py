@@ -745,7 +745,7 @@ def push_nc_dir_from_ec2(nc_root_dir_ec2, root_dest_s3_name):
             
             ## push file to s3 bucket
             mybucket = root_dest_s3_name + subdir_name
-            subdir_fullpath = Path(nc_root_dir_ec2 + "/" + subdir_name)
+            subdir_fullpath = Path("/home/jpluser/git_repos/SASSIE_downscale_ecco_v5/" + nc_root_dir_ec2 + "/" + subdir_name)
             nc_files = list(subdir_fullpath.glob('*.nc'))
     
             print(f'\n>pushing netcdf files in {subdir_name} to s3 bucket : {mybucket}')

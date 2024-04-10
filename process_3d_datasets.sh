@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # takes two arguments, the first is the gz file index to start, the second is the gz file index to end
-declare -a arr=("tr_diff_x_day_mean")
+# declare -a arr=("tr_diff_x_day_mean")
+declare -a arr=("tr_diff_r_day_mean")
 
 ## now loop through the above array
 for i in "${arr[@]}"
