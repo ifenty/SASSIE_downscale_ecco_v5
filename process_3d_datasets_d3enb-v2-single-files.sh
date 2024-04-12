@@ -17,10 +17,10 @@ do
     fen=$(printf "%0*d" 3 $en)
     
     # for "phi_3D_day_mean"
-    disk=$((sn / 2 +1)) 
+    # disk=$((sn / 2 +1)) 
     
     # for "KPP_mix_day_mean"
-    # disk=$((sn - 179)) 
+    disk=$((sn - 175)) 
     
     echo $sn $en $fsn $fen $disk
     #s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/ 
