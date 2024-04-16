@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # takes two arguments, the first is the gz file index to start ($1), the second is the gz file index to end ($2)
-# declare -a arr=("phi_3D_day_mean")
-declare -a arr=("ocean_vel_day_mean")
-# declare -a arr=("KPP_mix_day_mean")
+declare -a arr=("vol_adv_day_mean")
 
 ## now loop through the above array
 for x in "${arr[@]}"
@@ -17,10 +15,10 @@ do
     fen=$(printf "%0*d" 3 $en)
     
     # for "phi_3D_day_mean"
-    disk=$((sn / 2 +1)) 
+    # disk=$((sn / 2 +1)) 
     
     # for "KPP_mix_day_mean"
-    # disk=$((sn - 179)) 
+    disk=$((sn - 175)) 
     
     echo $sn $en $fsn $fen $disk
     #s3://ecco-processed-data/SASSIE/N1/V1/HH/NETCDF/ 
