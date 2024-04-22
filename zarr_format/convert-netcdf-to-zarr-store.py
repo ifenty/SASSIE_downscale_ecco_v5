@@ -152,11 +152,11 @@ def convert_sassie_ecco_netcdfs_to_zarr(var_name, sassie_s3_netcdf_dir, zarr_s3_
         if i == 0:
             ## create encoding for saving file
             enc = create_encoding(s3_file_ec2)
-            s3_file_ec2.to_zarr(store=s3_store, mode='w', encoding=enc, consolidated=True)
+            s3_file_ec2.to_zarr(store=s3_store, mode='w', encoding=enc)
             print(f"\n... saved first timestep {filename_i} to {zarr_s3_bucket_dir}")
         if i > 0:
             ## append with remaining netCDFs
-            s3_file_ec2.to_zarr(store=s3_store, mode='a', append_dim='time')
+            s3_file_ec2.to_zarr(store=s3_store, mode='a', append_dim='time', consolidated=True)
             print(f"\n... saved timestep {filename_i} to {zarr_s3_bucket_dir}")
         
     print(f"* * * * * saved all netCDF files to zarr store: {zarr_s3_bucket_dir} * * * * *")
