@@ -1,0 +1,11 @@
+{
+    "_ARRAY_DIMENSIONS": [
+        "time",
+        "nv"
+    ],
+    "calendar": "proleptic_gregorian",
+    "comment": "Start and end times of averaging period.",
+    "coverage_content_type": "coordinate",
+    "long_name": "time bounds of averaging period",
+    "units": "hours since 1992-01-01T12:00:00"
+}
