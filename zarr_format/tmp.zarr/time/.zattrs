@@ -8,5 +8,5 @@
     "coverage_content_type": "coordinate",
     "long_name": "midpoint of averaging period or snapshot",
     "standard_name": "time",
-    "units": "hours since 1992-01-01T12:00:00"
+    "units": "days since 2014-01-15 12:00:00"
 }

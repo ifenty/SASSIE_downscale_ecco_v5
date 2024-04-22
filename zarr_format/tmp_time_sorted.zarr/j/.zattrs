@@ -1,0 +1,10 @@
+{
+    "_ARRAY_DIMENSIONS": [
+        "j"
+    ],
+    "axis": "Y",
+    "comment": "In the Arakawa C-grid system, tracer (e.g., THETA) and 'u' variables (e.g., UVEL) have the same y coordinate on the model grid.",
+    "coverage_content_type": "coordinate",
+    "long_name": "grid index in y for variables at tracer and 'u' locations",
+    "swap_dim": "YC"
+}

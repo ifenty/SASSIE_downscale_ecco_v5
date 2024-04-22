@@ -1,0 +1,10 @@
+{
+    "_ARRAY_DIMENSIONS": [
+        "i"
+    ],
+    "axis": "X",
+    "comment": "In the Arakawa C-grid system, tracer (e.g., THETA) and 'v' variables (e.g., VVEL) have the same x coordinate on the model grid.",
+    "coverage_content_type": "coordinate",
+    "long_name": "grid index in x for variables at tracer and 'v' locations",
+    "swap_dim": "XC"
+}

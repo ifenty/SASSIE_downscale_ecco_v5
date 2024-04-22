@@ -13,10 +13,10 @@
             "creator_name": "ECCO Consortium",
             "creator_type": "group",
             "creator_url": "https://ecco-group.org",
-            "date_created": "2024-03-25T01:46:44",
-            "date_issued": "2024-03-25T01:46:44",
-            "date_metadata_modified": "2024-03-25T01:46:44",
-            "date_modified": "2024-03-25T01:46:44",
+            "date_created": "2024-03-25T01:47:53",
+            "date_issued": "2024-03-25T01:47:53",
+            "date_metadata_modified": "2024-03-25T01:47:53",
+            "date_modified": "2024-03-25T01:47:53",
             "geospatial_bounds_crs": "EPSG:4326",
             "geospatial_lat_max": 90.0,
             "geospatial_lat_min": 48.70000076293945,
@@ -36,7 +36,7 @@
             "platform": "ERS-1/2, TOPEX/Poseidon, Geosat Follow-On (GFO), ENVISAT, Jason-1, Jason-2, CryoSat-2, SARAL/AltiKa, Jason-3, AVHRR, Aquarius, SSM/I, SSMIS, GRACE, DTU17MDT, Argo, WOCE, GO-SHIP, MEOP, Ice Tethered Profilers (ITP)",
             "platform_vocabulary": "GCMD platform keywords",
             "processing_level": "L4",
-            "product_name": "SIarea_day_mean_2014-01-17_ECCO_SASSIE_V1_HH_llc1080.nc",
+            "product_name": "SIarea_day_mean_2014-01-21_ECCO_SASSIE_V1_HH_llc1080.nc",
             "product_version": "Version 1, Release 1",
             "program": "NASA Physical Oceanography",
             "project": "Estimating the Circulation and Climate of the Ocean (ECCO)",
@@ -49,10 +49,10 @@
             "source": "The SASSIE ocean model simulation was produced by downscaling the global ECCO state estimate from 1/3 to 1/12 degree grid cells. The ECCO global solution provided initial and boundary conditions and atmospheric forcing.",
             "standard_name_vocabulary": "NetCDF Climate and Forecast (CF) Metadata Convention",
             "summary": "This dataset provides data variable and geometric parameters for the lat-lon-cap 1080 (llc1080) native model grid from the SASSIE ECCO ocean model Version 1 Release 1 (V1r1) ocean and sea-ice state estimate.",
-            "time_coverage_end": "2014-01-17T00:00:00",
-            "time_coverage_start": "2014-01-18T00:00:00",
+            "time_coverage_end": "2014-01-21T00:00:00",
+            "time_coverage_start": "2014-01-22T00:00:00",
             "title": "SASSIE Ocean Model SIarea Parameter for the Lat-Lon-Cap 1080 (llc1080) Native Model Grid (Version 1 Release 1)",
-            "uuid": "88e07f2a-ea49-11ee-bb1f-06f6cde23aa5"
+            "uuid": "b1efb822-ea49-11ee-bb1f-06f6cde23aa5"
         },
         ".zgroup": {
             "zarr_format": 2
@@ -66,17 +66,17 @@
             "compressor": {
                 "blocksize": 0,
                 "clevel": 5,
-                "cname": "lz4",
+                "cname": "zlib",
                 "id": "blosc",
-                "shuffle": 1
+                "shuffle": false
             },
             "dimension_separator": ".",
             "dtype": "<f8",
-            "fill_value": 9.969209968386869e+36,
+            "fill_value": "NaN",
             "filters": null,
             "order": "C",
             "shape": [
-                3,
+                6,
                 1080,
                 1800
             ],
@@ -108,7 +108,7 @@
                 "shuffle": 1
             },
             "dtype": "<f4",
-            "fill_value": "NaN",
+            "fill_value": null,
             "filters": null,
             "order": "C",
             "shape": [
@@ -143,7 +143,7 @@
                 "shuffle": 1
             },
             "dtype": "<f4",
-            "fill_value": "NaN",
+            "fill_value": null,
             "filters": null,
             "order": "C",
             "shape": [
@@ -242,7 +242,7 @@
             "filters": null,
             "order": "C",
             "shape": [
-                3
+                6
             ],
             "zarr_format": 2
         },
@@ -256,7 +256,7 @@
             "coverage_content_type": "coordinate",
             "long_name": "midpoint of averaging period or snapshot",
             "standard_name": "time",
-            "units": "hours since 1992-01-01T12:00:00"
+            "units": "days since 2014-01-15 12:00:00"
         },
         "time_bnds/.zarray": {
             "chunks": [
@@ -276,7 +276,7 @@
             "filters": null,
             "order": "C",
             "shape": [
-                3,
+                6,
                 2
             ],
             "zarr_format": 2
@@ -290,7 +290,7 @@
             "comment": "Start and end times of averaging period.",
             "coverage_content_type": "coordinate",
             "long_name": "time bounds of averaging period",
-            "units": "hours since 1992-01-01T12:00:00"
+            "units": "days since 2014-01-15 00:00:00"
         }
     },
     "zarr_consolidated_format": 1

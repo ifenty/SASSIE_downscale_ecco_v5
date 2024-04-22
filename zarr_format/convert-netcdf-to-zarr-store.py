@@ -42,6 +42,58 @@ def time_it(func):
     return wrapper
 
 
+def create_encoding(ecco_ds, output_array_precision = np.float32):
+    
+    # Create NetCDF encoding directives
+    # ---------------------------------------------
+    # print('\n... creating variable encodings')
+    # ... data variable encoding directives
+    
+    # Define fill values for NaN
+    if output_array_precision == np.float32:
+        netcdf_fill_value = nc4.default_fillvals['f4']
+
+    elif output_array_precision == np.float64:
+        netcdf_fill_value = nc4.default_fillvals['f8']
+    
+    dv_encoding = dict()
+    for dv in ecco_ds.data_vars:
+        dv_encoding[dv] =  {'compressor': zarr.Blosc(cname="zlib", clevel=5, shuffle=False)}
+
+    # ... coordinate encoding directives
+    coord_encoding = dict()
+    
+    for coord in ecco_ds.coords:
+        # set default no fill value for coordinate
+        if output_array_precision == np.float32:
+            coord_encoding[coord] = {'_FillValue':None, 'dtype':'float32'}
+        elif output_array_precision == np.float64:
+            coord_encoding[coord] = {'_FillValue':None, 'dtype':'float64'}
+
+        # force 64 bit ints to be 32 bit ints
+        if (ecco_ds[coord].values.dtype == np.int32) or \
+           (ecco_ds[coord].values.dtype == np.int64) :
+            coord_encoding[coord]['dtype'] ='int32'
+
+        # fix encoding of time
+        if coord == 'time' or coord == 'time_bnds':
+            coord_encoding[coord]['dtype'] ='int32'
+
+            if 'units' in ecco_ds[coord].attrs:
+                # apply units as encoding for time
+                coord_encoding[coord]['units'] = ecco_ds[coord].attrs['units']
+                # delete from the attributes list
+                del ecco_ds[coord].attrs['units']
+
+        elif coord == 'time_step':
+            coord_encoding[coord]['dtype'] ='int32'
+
+    # ... combined data variable and coordinate encoding directives
+    encoding = {**dv_encoding, **coord_encoding}
+
+    return encoding
+
+
 ########### Create final routine to process files ########### 
 
 ## Specify root directory and process all variables in that dataset
@@ -98,11 +150,13 @@ def convert_sassie_ecco_netcdfs_to_zarr(var_name, sassie_s3_netcdf_dir, zarr_s3_
     
         ## write the first netCDF to establish the zarr store, then we will append to that one
         if i == 0:
-            s3_file_ec2.to_zarr(store=s3_store, mode='w')
+            ## create encoding for saving file
+            enc = create_encoding(s3_file_ec2)
+            s3_file_ec2.to_zarr(store=s3_store, mode='w', encoding=enc, consolidated=True)
             print(f"\n... saved first timestep {filename_i} to {zarr_s3_bucket_dir}")
         if i > 0:
             ## append with remaining netCDFs
-            s3_file_ec2.to_zarr(store=s3_store, mode='a', consolidated=True, append_dim='time')
+            s3_file_ec2.to_zarr(store=s3_store, mode='a', append_dim='time')
             print(f"\n... saved timestep {filename_i} to {zarr_s3_bucket_dir}")
         
     print(f"* * * * * saved all netCDF files to zarr store: {zarr_s3_bucket_dir} * * * * *")

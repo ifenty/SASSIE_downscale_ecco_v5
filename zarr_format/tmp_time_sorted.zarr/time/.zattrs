@@ -1,0 +1,12 @@
+{
+    "_ARRAY_DIMENSIONS": [
+        "time"
+    ],
+    "axis": "T",
+    "bounds": "time_bnds",
+    "calendar": "proleptic_gregorian",
+    "coverage_content_type": "coordinate",
+    "long_name": "midpoint of averaging period or snapshot",
+    "standard_name": "time",
+    "units": "days since 2014-01-15T12:00:00"
+}

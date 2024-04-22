@@ -11,7 +11,7 @@
         "shuffle": 1
     },
     "dtype": "<f4",
-    "fill_value": "NaN",
+    "fill_value": null,
     "filters": null,
     "order": "C",
     "shape": [
